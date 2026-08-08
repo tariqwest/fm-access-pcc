@@ -145,6 +145,71 @@ src/server/          # Hono adapter
 
 Research notes: `.agents/research/pcc-matrix-results.md`, `.agents/research/afm-lab-pcc-findings.md`.
 
+## Related projects
+
+`fm-access-PCC` sits in a small stack of Apple FM / agent-bridge tools. Rough roles:
+
+```text
+                    ┌─────────────────────────────┐
+                    │  Hosts / OpenAI clients     │
+                    │  (apps, ACP IDEs, curl)     │
+                    └─────────────┬───────────────┘
+           ┌──────────────────────┼──────────────────────┐
+           ▼                      ▼                      ▼
+   ┌───────────────┐    ┌─────────────────┐    ┌──────────────────┐
+   │ fm-acp        │    │ fm-server       │    │ acp-to-api /     │
+   │ (ACP stdio)   │    │ (HTTP gateway)  │    │ prompt-to-api    │
+   └───────┬───────┘    └────────┬────────┘    └──────────────────┘
+           │  shared PCC ideas   │ uses this package for `pcc`
+           ▼                     ▼
+   ┌────────────────────────────────────────────┐
+   │ fm-access-PCC  (this repo)                 │
+   │ library + /fm + /v1 over Terminal fm serve │
+   └────────────────────┬───────────────────────┘
+                        ▼
+              /usr/bin/fm  (+ optional afm / Lab bridge)
+```
+
+### Parent / consumer
+
+| Project | Relation |
+|---|---|
+| **[fm-server](https://github.com/tariqwest/fm-server)** | Higher-level OpenAI-compatible HTTP server/CLI for Apple FM. Routes **`pcc`** through **fm-access-pcc** and **`system`** through in-process FFI via javascript-apple-fm-sdk. Treat as the usual “drop-in server” parent of this library. |
+
+### Sibling (same FM / PCC surface, different host protocol)
+
+| Project | Relation |
+|---|---|
+| **[fm-acp](https://github.com/tariqwest/fm-acp)** | ACP stdio adapter for the same Terminal-hosted `fm serve` + PCC research. Overlapping bootstrap (`cua-driver`, serve launcher, Lab bridge). Prefer **fm-acp** inside ACP hosts (Zed, etc.); prefer **this package** for library imports and a plain HTTP/OpenAI TCP API. Sockets can be shared via `FM_ACCESS_PCC_SERVE_SOCK` / `FM_ACP_SERVE_SOCK`. |
+| **[oz-acp](https://github.com/tariqwest/oz-acp)** | Sibling ACP adapter pattern for Warp’s `oz` CLI (not Apple FM). Same “host protocol adapter” shape as fm-acp, different backend. |
+
+### Child / lower layer
+
+| Project | Relation |
+|---|---|
+| **macOS `/usr/bin/fm`** | System CLI this package wraps (`respond`, `serve --socket`, `available`, …). Required runtime; not a separate repo. |
+| **[javascript-apple-fm-sdk](https://github.com/tariqwest/javascript-apple-fm-sdk)** | On-device `SystemLanguageModel` bindings (FFI). Complementary path used by **fm-server** for `system`; this package reaches on-device mainly via `fm` / serve rather than the SDK. |
+
+### Overlapping / inspiration
+
+| Project | Relation |
+|---|---|
+| **[acp-to-api](https://github.com/tariqwest/acp-to-api)** | OpenAI-compatible REST front for local **ACP** agents. Same “expose agent-ish backends as `/v1`” idea; backends are ACP CLIs, not `fm`. |
+| **[prompt-to-api](https://github.com/tariqwest/prompt-to-api)** | Sibling of acp-to-api for one-shot print-mode AI CLIs. |
+| **[promptpipe](https://github.com/tariqwest/promptpipe)** | Unix-style prompt/stdin plumbing for coding CLIs; inspiration for thin, composable agent I/O rather than full harnesses. |
+| **[acp-router](https://github.com/tariqwest/acp-router)** | LiteLLM-oriented ACP routing; related agent-gateway ecosystem, not FM-specific. |
+| **Apple `fm serve`** | Built-in OpenAI-shaped local server. Inspiration and production transport: when **Terminal-hosted**, it is the validated multi-client PCC path this package clients. |
+| **Foundation Lab / `afm`** | Community Lab app + CLI; historical Agent Bridge (`connection.json`) is an optional secondary PCC candidate (see research notes). Homebrew `afm` alone is on-device-oriented. |
+| **[Cua cua-driver](https://cua.ai/driver/install.sh)** | Used to auto-launch Terminal for PCC-capable `fm serve` (same happy path as fm-acp). |
+
+### When to use what
+
+- **Importable API / small Hono service for FM only** → this package (`fm-access-pcc`)
+- **Unified FM HTTP server with FFI system + PCC** → [fm-server](https://github.com/tariqwest/fm-server)
+- **Apple FM inside an ACP IDE** → [fm-acp](https://github.com/tariqwest/fm-acp)
+- **Warp Oz inside ACP** → [oz-acp](https://github.com/tariqwest/oz-acp)
+- **OpenAI HTTP in front of other local agents/CLIs** → [acp-to-api](https://github.com/tariqwest/acp-to-api) / [prompt-to-api](https://github.com/tariqwest/prompt-to-api)
+
 ## License
 
 MIT
