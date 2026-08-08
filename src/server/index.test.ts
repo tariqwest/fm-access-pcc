@@ -25,7 +25,10 @@ describe('createApp', () => {
     const app = createApp();
     const res = await app.request('/health');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: 'ok' });
+    const body = await res.json();
+    expect(body.status).toBe('ok');
+    expect(body.serve).toBeDefined();
+    expect(body.serve.socketPath).toBeTruthy();
   });
 
   it('responds to GET /v1/models', async () => {

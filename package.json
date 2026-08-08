@@ -16,7 +16,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "scripts"
   ],
   "scripts": {
     "build": "rm -rf dist && tsc",
@@ -25,7 +26,9 @@
     "start": "bun dist/server/index.js",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "bun run build && bun run test && bun run typecheck",
-    "release": "bash scripts/release.sh"
+    "release": "bash scripts/release.sh",
+    "ensure:cua-driver": "node scripts/ensure-cua-driver.mjs",
+    "postinstall": "node scripts/ensure-cua-driver.mjs"
   },
   "keywords": [
     "apple",
@@ -34,7 +37,9 @@
     "pcc",
     "openai-compatible",
     "macos",
-    "fm-access-pcc"
+    "fm-access-pcc",
+    "cua-driver",
+    "fm-serve"
   ],
   "author": "Tariq West",
   "license": "MIT",
@@ -57,7 +62,6 @@
   ],
   "dependencies": {
     "hono": "^4.12.27",
-    "node-pty": "^1.1.0",
     "uuid": "^14.0.1",
     "zod": "^4.4.3"
   },
@@ -69,5 +73,8 @@
     "typescript": "^6.0.3",
     "vite": "^8.1.0",
     "vitest": "^4.1.9"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0"
   }
 }

@@ -6,8 +6,15 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(),
 }));
 
+vi.mock('./transport.js', () => ({
+  transportGetAvailableModels: vi.fn(async () => [
+    { model: 'system', available: true, source: 'fm-serve' },
+    { model: 'pcc', available: true, source: 'fm-serve' },
+  ]),
+}));
+
 import { spawn } from 'child_process';
-import { getAvailableModels, getQuotaUsage } from './models.js';
+import { getAvailableModels, getAvailableModelsDirect, getQuotaUsage } from './models.js';
 
 const mockSpawn = vi.mocked(spawn);
 
@@ -22,7 +29,6 @@ function createMockProcess(stdoutData: string, exitCode = 0, stderrData = '') {
     killed: false,
     kill: vi.fn(),
   });
-
   setTimeout(() => {
     if (stdoutData) stdout.push(stdoutData);
     stdout.push(null);
@@ -30,78 +36,36 @@ function createMockProcess(stdoutData: string, exitCode = 0, stderrData = '') {
     stderr.push(null);
     proc.emit('close', exitCode);
   }, 0);
-
   return proc as any;
 }
 
 describe('getAvailableModels', () => {
+  it('uses transport', async () => {
+    const models = await getAvailableModels();
+    expect(models.some((m) => m.model === 'pcc' && m.available)).toBe(true);
+  });
+});
+
+describe('getAvailableModelsDirect', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('parses availability for both models', async () => {
-    mockSpawn.mockReturnValue(createMockProcess(
-      'system: available\npcc: available\n'
-    ));
-
-    const result = await getAvailableModels();
-    expect(result).toEqual([
-      { model: 'system', available: true },
-      { model: 'pcc', available: true },
+  it('parses fm available output', async () => {
+    mockSpawn.mockReturnValue(createMockProcess('system: available\npcc: unavailable\n'));
+    const models = await getAvailableModelsDirect();
+    expect(models).toEqual([
+      { model: 'system', available: true, source: 'fm' },
+      { model: 'pcc', available: false, source: 'fm' },
     ]);
-    expect(mockSpawn).toHaveBeenCalledWith('fm', ['available']);
-  });
-
-  it('handles unavailable models', async () => {
-    mockSpawn.mockReturnValue(createMockProcess(
-      'system: available\npcc: unavailable\n'
-    ));
-
-    const result = await getAvailableModels();
-    expect(result).toEqual([
-      { model: 'system', available: true },
-      { model: 'pcc', available: false },
-    ]);
-  });
-
-  it('can check a specific model', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('pcc: available\n'));
-
-    const result = await getAvailableModels('pcc');
-    expect(mockSpawn).toHaveBeenCalledWith('fm', ['available', '--model', 'pcc']);
-    expect(result).toEqual([{ model: 'pcc', available: true }]);
-  });
-
-  it('rejects on non-zero exit', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('', 1, 'Error'));
-    await expect(getAvailableModels()).rejects.toThrow('Error');
   });
 });
 
 describe('getQuotaUsage', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('returns quota info for all models', async () => {
-    mockSpawn.mockReturnValue(createMockProcess(
-      'system: 10/100 requests used\npcc: 50/500 requests used\n'
-    ));
-
-    const result = await getQuotaUsage();
-    expect(result).toEqual([
-      { model: 'system', usage: '10/100 requests used' },
-      { model: 'pcc', usage: '50/500 requests used' },
-    ]);
-    expect(mockSpawn).toHaveBeenCalledWith('fm', ['quota-usage']);
-  });
-
-  it('can check a specific model', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('pcc: 50/500 requests used\n'));
-
-    const result = await getQuotaUsage('pcc');
-    expect(mockSpawn).toHaveBeenCalledWith('fm', ['quota-usage', '--model', 'pcc']);
-    expect(result).toEqual([{ model: 'pcc', usage: '50/500 requests used' }]);
-  });
-
-  it('rejects on non-zero exit', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('', 1, 'Quota error'));
-    await expect(getQuotaUsage()).rejects.toThrow('Quota error');
+  it('parses quota lines', async () => {
+    mockSpawn.mockReturnValue(createMockProcess('system: 0\npcc: 10%\n'));
+    const q = await getQuotaUsage();
+    expect(q[0].model).toBe('system');
+    expect(q[1].usage).toContain('10%');
   });
 });

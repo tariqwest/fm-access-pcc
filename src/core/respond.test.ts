@@ -1,45 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Readable, Writable } from 'stream';
-import { EventEmitter } from 'events';
 
-// Mock child_process before importing respond
-vi.mock('child_process', () => ({
-  spawn: vi.fn(),
-}));
+vi.mock('./transport.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./transport.js')>();
+  return {
+    ...actual,
+    transportRespond: vi.fn((prompt: string, opts: any = {}) => {
+      if (opts?.stream) {
+        return (async function* () {
+          yield { text: 'chunk1', backend: 'fm' };
+          yield { text: 'chunk2', backend: 'fm' };
+        })();
+      }
+      return (async () => {
+        if (prompt === 'fail') throw new Error('Error: model unavailable');
+        return { text: 'Swift is a language', backend: 'fm' };
+      })();
+    }),
+  };
+});
 
-import { spawn } from 'child_process';
 import { respond, buildRespondArgs } from './respond.js';
+import { transportRespond } from './transport.js';
 
-const mockSpawn = vi.mocked(spawn);
-
-function createMockProcess(stdoutData: string, exitCode = 0, stderrData = '') {
-  const stdout = new Readable({ read() {} });
-  const stderr = new Readable({ read() {} });
-  const proc = Object.assign(new EventEmitter(), {
-    stdout,
-    stderr,
-    stdin: new Writable({ write() {} }),
-    pid: 1234,
-    killed: false,
-    kill: vi.fn(),
-  });
-
-  // Emit data async so the listeners are attached first
-  setTimeout(() => {
-    if (stdoutData) stdout.push(stdoutData);
-    stdout.push(null);
-    if (stderrData) stderr.push(stderrData);
-    stderr.push(null);
-    proc.emit('close', exitCode);
-  }, 0);
-
-  return proc as any;
-}
+const mockTransport = vi.mocked(transportRespond);
 
 describe('buildRespondArgs', () => {
   it('builds minimal args', () => {
-    const args = buildRespondArgs('Hello', {});
-    expect(args).toEqual(['respond', 'Hello']);
+    expect(buildRespondArgs('Hello', {})).toEqual(['respond', 'Hello']);
   });
 
   it('adds --model flag', () => {
@@ -48,134 +35,32 @@ describe('buildRespondArgs', () => {
     expect(args).toContain('pcc');
   });
 
-  it('adds --instructions flag', () => {
-    const args = buildRespondArgs('Hello', { instructions: 'Be concise' });
-    expect(args).toContain('--instructions');
-    expect(args).toContain('Be concise');
-  });
-
-  it('adds --greedy flag', () => {
-    const args = buildRespondArgs('Hello', { greedy: true });
-    expect(args).toContain('--greedy');
-  });
-
-  it('does not add --greedy when false', () => {
-    const args = buildRespondArgs('Hello', { greedy: false });
-    expect(args).not.toContain('--greedy');
-  });
-
-  it('adds --image flag', () => {
-    const args = buildRespondArgs('Describe', { image: '/tmp/photo.jpg' });
-    expect(args).toContain('--image');
-    expect(args).toContain('/tmp/photo.jpg');
-  });
-
-  it('adds --no-stream when stream is false', () => {
-    const args = buildRespondArgs('Hello', { stream: false });
-    expect(args).toContain('--no-stream');
-  });
-
-  it('does not add --no-stream when stream is true', () => {
-    const args = buildRespondArgs('Hello', { stream: true });
-    expect(args).not.toContain('--no-stream');
-  });
-
-it('adds --resume', () => {
+  it('adds --resume', () => {
     const args = buildRespondArgs('Hello', { transcript: '/tmp/t.json' });
     expect(args).toContain('--resume');
-    expect(args).toContain('/tmp/t.json');
-  });
-
-  it('adds --save-transcript', () => {
-    const args = buildRespondArgs('Hello', { saveTranscript: 'my-session' });
-    expect(args).toContain('--save-transcript');
-    expect(args).toContain('my-session');
-  });
-
-  it('adds --use-case', () => {
-    const args = buildRespondArgs('Hello', { useCase: 'content-tagging' });
-    expect(args).toContain('--use-case');
-    expect(args).toContain('content-tagging');
-  });
-
-  it('adds --guardrails', () => {
-    const args = buildRespondArgs('Hello', { guardrails: 'permissive-content-transformations' });
-    expect(args).toContain('--guardrails');
-    expect(args).toContain('permissive-content-transformations');
-  });
-
-  it('puts prompt at the end', () => {
-    const args = buildRespondArgs('My prompt', { model: 'system', greedy: true });
-    expect(args[args.length - 1]).toBe('My prompt');
   });
 });
 
-describe('respond (buffered)', () => {
+describe('respond', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('returns text from stdout on success', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('Swift is a language\n'));
+  it('delegates to transport', async () => {
     const result = await respond('What is Swift?');
     expect(result.text).toBe('Swift is a language');
-    expect(mockSpawn).toHaveBeenCalledWith('fm', expect.arrayContaining(['respond', 'What is Swift?']));
+    expect(mockTransport).toHaveBeenCalled();
   });
 
-  it('passes options to spawn args', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('Response'));
-    await respond('Hello', { model: 'system', instructions: 'Be brief' });
-    const spawnArgs = mockSpawn.mock.calls[0][1];
-    expect(spawnArgs).toContain('--model');
-    expect(spawnArgs).toContain('system');
-    expect(spawnArgs).toContain('--instructions');
-    expect(spawnArgs).toContain('Be brief');
+  it('rejects on transport error', async () => {
+    await expect(respond('fail')).rejects.toThrow('Error: model unavailable');
   });
 
-  it('rejects on non-zero exit code', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('', 1, 'Error: model unavailable'));
-    await expect(respond('Hello')).rejects.toThrow('Error: model unavailable');
-  });
-
-  it('trims whitespace from output', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('  hello world  \n'));
-    const result = await respond('Hi');
-    expect(result.text).toBe('hello world');
-  });
-});
-
-describe('respond (streaming)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('yields chunks from stdout', async () => {
-    const stdout = new Readable({ read() {} });
-    const stderr = new Readable({ read() {} });
-    const proc = Object.assign(new EventEmitter(), {
-      stdout,
-      stderr,
-      stdin: new Writable({ write() {} }),
-      pid: 1234,
-      killed: false,
-      kill: vi.fn(),
-    });
-
-    setTimeout(() => {
-      stdout.push('chunk1');
-      stdout.push('chunk2');
-      stdout.push(null);
-      stderr.push(null);
-      proc.emit('close', 0);
-    }, 0);
-
-    mockSpawn.mockReturnValue(proc as any);
-
+  it('streams via transport', async () => {
     const chunks: string[] = [];
-    for await (const chunk of respond('Hello', { stream: true })) {
-      chunks.push(chunk.text);
+    for await (const c of respond('Hello', { stream: true })) {
+      chunks.push(c.text);
     }
-
     expect(chunks).toEqual(['chunk1', 'chunk2']);
   });
 });

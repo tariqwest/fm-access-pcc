@@ -26,11 +26,15 @@ fm-access-PCC/
 ├── src/
 │   ├── core/                  # Library layer — zero HTTP dependencies
 │   │   ├── types.ts           # Zod schemas, inferred TypeScript types
-│   │   ├── respond.ts         # Wraps `fm respond` (buffered + async streaming)
-│   │   ├── chat.ts            # Wraps `fm chat` via node-pty PTY sessions
-│   │   ├── models.ts          # Wraps `fm available` and `fm quota-usage`
-│   │   ├── tokens.ts          # Wraps `fm token-count`
-│   │   └── index.ts           # Barrel export for all core APIs
+│   │   ├── transport.ts       # serve → lab-bridge → direct fm routing
+│   │   ├── fm-serve.ts        # HTTP client over fm serve Unix socket
+│   │   ├── serve-bootstrap.ts # Terminal-hosted serve auto-start
+│   │   ├── cua-driver.ts      # cua-driver resolve/install
+│   │   ├── respond.ts         # Public respond() → transport
+│   │   ├── chat.ts            # History sessions (optional pty-chat)
+│   │   ├── models.ts          # Availability + quota
+│   │   ├── tokens.ts          # fm token-count
+│   │   └── index.ts           # Barrel export
 │   ├── server/                # HTTP adapter layer (Hono)
 │   │   ├── routes/
 │   │   │   ├── native.ts      # /fm/* routes (mirrors CLI capabilities)
@@ -153,8 +157,8 @@ bun run release      # Release to npm + GitHub
 ## Key Design Decisions
 
 1. **Library-first architecture**: Core has zero HTTP dependencies. Server is a thin adapter.
-2. **PTY for `fm chat`**: Required because `fm chat` is an interactive TUI that checks for terminal attachment. `fm respond` works fine with regular `child_process.spawn`.
-3. **No `fm serve` usage**: `fm serve` only supports on-device models. We need PCC access, so we wrap the CLI directly.
+2. **Default chat is history + transport**: Sessions keep messages and call serve/completions. Optional `transport: 'pty-chat'` uses node-pty for legacy on-device chat only (not PCC).
+3. **Terminal-hosted `fm serve --socket` for PCC**: Validated multi-client PCC path. Auto-started via cua-driver / `open -a Terminal`. Direct/PTY `fm respond` is not a PCC path.
 4. **Dual API surface**: Native `/fm/*` routes expose full CLI capabilities. OpenAI `/v1/*` routes provide compatibility with existing tooling.
 5. **Zod validation**: All inputs/outputs have runtime-validated schemas that also produce TypeScript types.
 
@@ -167,6 +171,6 @@ The `fm` binary at `/usr/bin/fm` provides:
 - `fm quota-usage` — PCC quota info
 - `fm token-count` — token counting (system model only, `--quiet` for bare integer)
 - `fm schema object` — JSON schema generation helper
-- `fm serve` — built-in server (on-device only, NOT used by this project)
+- `fm serve --socket` — preferred multi-client path; system+pcc when Terminal-hosted
 
 Models: `system` (on-device), `pcc` (Private Cloud Compute, default)

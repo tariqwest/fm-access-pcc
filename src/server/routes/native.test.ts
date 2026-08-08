@@ -45,7 +45,10 @@ describe('Native Routes', () => {
     it('returns ok', async () => {
       const res = await createApp().request('/health');
       expect(res.status).toBe(200);
-      expect(await json(res)).toEqual({ status: 'ok' });
+      const body = await json(res);
+      expect(body.status).toBe('ok');
+      expect(body.serve).toBeDefined();
+      expect(body.serve.socketPath).toBeTruthy();
     });
   });
 

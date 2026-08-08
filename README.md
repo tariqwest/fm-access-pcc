@@ -1,6 +1,8 @@
 # fm-access-PCC
 
-A TypeScript library and server that wraps Apple's macOS `fm` CLI (Foundation Models) as a programmatic API. Provides access to both on-device (`system`) and Private Cloud Compute (`pcc`) models — unlike `fm serve`, which is limited to on-device only.
+TypeScript library and HTTP server for Apple Foundation Models on macOS — **system** (on-device) and **pcc** (Private Cloud Compute).
+
+**Validated PCC path:** Terminal-hosted `fm serve --socket`. External clients (this library and the TCP server) call the serve Unix socket. A PTY or direct non-Terminal `fm respond --model pcc` does **not** unlock PCC.
 
 ## Install
 
@@ -8,131 +10,140 @@ A TypeScript library and server that wraps Apple's macOS `fm` CLI (Foundation Mo
 bun add fm-access-pcc
 ```
 
-Or from GitHub Releases:
+Happy path installs **cua-driver** (for auto-starting Terminal-hosted serve) via postinstall. Skip with:
 
 ```bash
-bun add ./fm-access-pcc-0.1.0.tgz
+FM_ACCESS_PCC_SKIP_CUA_DRIVER_POSTINSTALL=1 bun add fm-access-pcc
 ```
 
 ## Requirements
 
-- macOS 27+ with `fm` CLI available at `/usr/bin/fm`
+- macOS 27+ with `/usr/bin/fm`
 - Bun >= 1.0.0
+- For PCC: Terminal-hosted `fm serve` (auto-started by default) or share an existing socket
 
-## Usage as a Library
-
-Import directly — no server needed:
+## Library usage
 
 ```typescript
 import { respond, createChatSession, getAvailableModels, countTokens } from 'fm-access-pcc';
 
-// Single-turn generation
 const result = await respond('What is Swift?', { model: 'pcc' });
-console.log(result.text);
+console.log(result.text, result.backend); // backend: 'fm-serve' | 'fm' | 'lab-bridge'
 
-// Streaming
-for await (const chunk of respond('Explain async/await', { stream: true })) {
+for await (const chunk of respond('Explain async/await', { stream: true, model: 'system' })) {
   process.stdout.write(chunk.text);
 }
 
-// Multi-turn chat
 const chat = await createChatSession({ model: 'pcc', instructions: 'Be concise' });
 const reply = await chat.send('Hello');
 await chat.close();
 
-// Structured output (JSON schema)
-const json = await respond('Extract the person', {
-  schema: { name: 'Person', properties: { name: 'string', age: 'integer' } }
-});
-
-// Utilities
 const models = await getAvailableModels();
 const { count } = await countTokens('Hello world');
 ```
 
-## Usage as a Server
+## Server usage
 
 ```typescript
 import { createServer } from 'fm-access-pcc/server';
 
 const server = createServer({ port: 8000 });
-server.start();
+await server.start(); // ensures Terminal-hosted fm serve by default
 ```
-
-Or run directly:
 
 ```bash
 bun run start
 ```
 
-### Native API (`/fm/*`)
+### Native API
 
 ```
-POST   /fm/respond              Single-turn generation
-POST   /fm/chat                 Multi-turn chat (creates session)
-DELETE /fm/chat/:session_id     Close a chat session
-GET    /fm/models/available     Model availability
-GET    /fm/quota                Quota usage
-POST   /fm/token-count          Token counting (system model only)
-GET    /health                  Health check
+POST   /fm/respond
+POST   /fm/chat
+DELETE /fm/chat/:session_id
+GET    /fm/models/available
+GET    /fm/quota
+POST   /fm/token-count
+GET    /health                 # includes serve socket health + models
 ```
 
-### OpenAI-Compatible API (`/v1/*`)
-
-Drop-in replacement for clients expecting the Chat Completions format:
+### OpenAI-compatible API
 
 ```
-GET    /v1/models               List models
-POST   /v1/chat/completions     Chat completions (streaming & non-streaming)
+GET    /v1/models
+POST   /v1/chat/completions
 ```
 
-Example request:
+## PCC operator flow
+
+Default **auto-serve** (ON):
+
+1. Ensure `cua-driver` (postinstall / first use)
+2. Write `~/.config/fm-access-pcc/start-fm-serve.command`
+3. Launch Terminal via `cua-driver call launch_app` (fallback: `open -a Terminal`)
+4. Wait for `GET /health` on the Unix socket
+
+Manual:
 
 ```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "pcc",
-    "messages": [{"role": "user", "content": "What is Swift?"}],
-    "stream": false
-  }'
+mkdir -p ~/.config/fm-access-pcc
+# In Terminal.app:
+fm serve --socket ~/.config/fm-access-pcc/fm.sock
 ```
+
+Disable auto-start: `FM_ACCESS_PCC_AUTO_SERVE=0`.
+
+Share a socket with fm-acp:
+
+```bash
+export FM_ACCESS_PCC_SERVE_SOCK="$HOME/.config/fm-acp/fm.sock"
+```
+
+### Anti-patterns (do not use for PCC)
+
+- PTY-wrapped `fm respond --model pcc`
+- Background / non-Terminal `fm serve`
+- `osascript` `do script` to launch serve
+- Assuming a helper process under Terminal makes child `fm respond` PCC-capable
+
+## Environment
+
+| Variable | Description |
+|---|---|
+| `FM_ACCESS_PCC_SERVE_SOCK` | `fm serve --socket` path (default `~/.config/fm-access-pcc/fm.sock`) |
+| `FM_ACCESS_PCC_AUTO_SERVE` | Default **on**. `0`/`false` disables auto Terminal launch |
+| `FM_ACCESS_PCC_AUTO_SERVE_TIMEOUT_MS` | Wait for serve health (default `12000`) |
+| `FM_ACCESS_PCC_SERVE_LAUNCHER` | Path to `start-fm-serve.command` |
+| `FM_ACCESS_PCC_ENSURE_CUA_DRIVER` | Default **on**. Install cua-driver when missing |
+| `FM_ACCESS_PCC_SKIP_CUA_DRIVER_POSTINSTALL` | `1` skips install-time ensure |
+| `FM_ACCESS_PCC_LAB_BRIDGE` | Default **on** probe of Lab `connection.json` if present |
+| `FM_BIN` / `FM_BIN_PATH` | Path to `fm` |
+| `CUA_DRIVER_BIN` / `CUA_DRIVER_PATH` | cua-driver binary |
+| `CUA_DRIVER_INSTALL_URL` | Installer URL |
+| `AFM_BRIDGE_DESCRIPTOR` | Lab bridge descriptor path |
 
 ## Development
 
 ```bash
 bun install
-bun run test        # run tests
-bun run typecheck   # type check
-bun run build       # compile to dist/
+bun run test
+bun run typecheck
+bun run build
 ```
-
-## Releasing
-
-```bash
-bun run release     # or: ./scripts/release.sh [patch|minor|major]
-```
-
-Publishes to npm and creates a GitHub Release with the tarball attached.
 
 ## Architecture
 
 ```
-src/
-├── core/           # Library layer (no HTTP dependency)
-│   ├── respond.ts  # fm respond wrapper (buffered + streaming)
-│   ├── chat.ts     # fm chat PTY session manager
-│   ├── models.ts   # fm available / quota-usage
-│   ├── tokens.ts   # fm token-count
-│   ├── types.ts    # Zod schemas + inferred types
-│   └── index.ts    # Barrel export
-├── server/         # Hono HTTP adapter
-│   ├── routes/
-│   │   ├── native.ts   # /fm/* endpoints
-│   │   └── openai.ts   # /v1/* endpoints (OpenAI-compatible)
-│   └── index.ts    # createApp + createServer
-└── index.ts        # Package entry: re-exports core + server
+src/core/
+  transport.ts       # serve → lab-bridge → direct fm
+  fm-serve.ts        # HTTP over Unix socket
+  serve-bootstrap.ts # Terminal auto-start (cua-driver / open -a)
+  cua-driver.ts
+  respond.ts / chat.ts / models.ts
+src/server/          # Hono adapter
 ```
+
+Research notes: `.agents/research/pcc-matrix-results.md`, `.agents/research/afm-lab-pcc-findings.md`.
 
 ## License
 

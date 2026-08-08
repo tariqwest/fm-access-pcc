@@ -8,16 +8,23 @@ import {
   countTokens,
 } from '../../core/index.js';
 import type { FmModel } from '../../core/index.js';
+import { defaultFmServeSocket } from '../../core/config.js';
+import { fmServeHealth } from '../../core/fm-serve.js';
 
 export const nativeRoutes = new Hono();
 
-// --- Health ---
-
-nativeRoutes.get('/health', (c) => {
-  return c.json({ status: 'ok' });
+nativeRoutes.get('/health', async (c) => {
+  const socketPath = defaultFmServeSocket();
+  const serve = await fmServeHealth(socketPath);
+  return c.json({
+    status: 'ok',
+    serve: {
+      socketPath,
+      running: Boolean(serve),
+      health: serve,
+    },
+  });
 });
-
-// --- Respond ---
 
 nativeRoutes.post('/fm/respond', async (c) => {
   const { prompt, ...options } = await c.req.json();
@@ -31,11 +38,16 @@ nativeRoutes.post('/fm/respond', async (c) => {
         new ReadableStream({
           async start(controller) {
             const encoder = new TextEncoder();
-            for await (const chunk of respond(prompt, { ...options, stream: true })) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            try {
+              for await (const chunk of respond(prompt, { ...options, stream: true })) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+              }
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+              controller.close();
+            } catch (err: any) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: err.message })}\n\n`));
+              controller.close();
             }
-            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-            controller.close();
           },
         }),
         {
@@ -44,7 +56,7 @@ nativeRoutes.post('/fm/respond', async (c) => {
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
           },
-        }
+        },
       );
     } else {
       const result = await respond(prompt, options);
@@ -55,16 +67,14 @@ nativeRoutes.post('/fm/respond', async (c) => {
   }
 });
 
-// --- Chat ---
-
 nativeRoutes.post('/fm/chat', async (c) => {
-  const { prompt, session_id, model, instructions, resume } = await c.req.json();
+  const { prompt, model, instructions, resume, transport } = await c.req.json();
   if (!prompt) {
     return c.json({ error: 'Prompt is required' }, 400);
   }
 
   try {
-    const session = await createChatSession({ model, instructions, resume });
+    const session = await createChatSession({ model, instructions, resume, transport });
     const response = await session.send(prompt);
     return c.json({ session_id: session.id, response });
   } catch (err: any) {
@@ -82,8 +92,6 @@ nativeRoutes.delete('/fm/chat/:session_id', (c) => {
   }
 });
 
-// --- Models ---
-
 nativeRoutes.get('/fm/models/available', async (c) => {
   try {
     const model = c.req.query('model') as FmModel | undefined;
@@ -94,8 +102,6 @@ nativeRoutes.get('/fm/models/available', async (c) => {
   }
 });
 
-// --- Quota ---
-
 nativeRoutes.get('/fm/quota', async (c) => {
   try {
     const model = c.req.query('model') as FmModel | undefined;
@@ -105,8 +111,6 @@ nativeRoutes.get('/fm/quota', async (c) => {
     return c.json({ error: err.message }, 500);
   }
 });
-
-// --- Token Count ---
 
 nativeRoutes.post('/fm/token-count', async (c) => {
   const { prompt, instructions, image, transcript } = await c.req.json();

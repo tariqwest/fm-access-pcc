@@ -23,6 +23,10 @@ export const RespondOptionsSchema = z.object({
   saveTranscript: z.string().optional(),
   useCase: z.enum(['general', 'content-tagging']).optional(),
   guardrails: z.enum(['default', 'permissive-content-transformations']).optional(),
+  history: z.array(z.object({
+    role: z.enum(['system', 'user', 'assistant']),
+    content: z.string(),
+  })).optional(),
 });
 export type RespondOptions = z.infer<typeof RespondOptionsSchema> & {
   /** Abort in-flight fm process (not part of zod JSON schema). */
@@ -31,6 +35,7 @@ export type RespondOptions = z.infer<typeof RespondOptionsSchema> & {
 
 export const RespondResultSchema = z.object({
   text: z.string(),
+  backend: z.enum(['fm-serve', 'fm', 'lab-bridge']).optional(),
 });
 export type RespondResult = z.infer<typeof RespondResultSchema>;
 
@@ -40,6 +45,8 @@ export const ChatSessionOptionsSchema = z.object({
   model: FmModelSchema.optional(),
   instructions: z.string().optional(),
   resume: z.string().optional(),
+  /** Legacy on-device PTY fm chat. Not a PCC path. */
+  transport: z.enum(['auto', 'pty-chat']).optional(),
 });
 export type ChatSessionOptions = z.infer<typeof ChatSessionOptionsSchema>;
 
@@ -54,6 +61,8 @@ export interface ChatSession {
 export const ModelAvailabilitySchema = z.object({
   model: FmModelSchema,
   available: z.boolean(),
+  reason: z.string().optional(),
+  source: z.enum(['fm-serve', 'fm', 'lab-bridge', 'none']).optional(),
 });
 export type ModelAvailability = z.infer<typeof ModelAvailabilitySchema>;
 

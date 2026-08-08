@@ -8,14 +8,16 @@ cd "$ROOT"
 # --- Parse args ---
 
 SKIP_NPM=false
+YES=false
 VERSION_TYPE="patch"
 
 for arg in "$@"; do
   case "$arg" in
     --skip-npm) SKIP_NPM=true ;;
+    -y|--yes) YES=true ;;
     patch|minor|major) VERSION_TYPE="$arg" ;;
     *)
-      echo "Usage: $0 [patch|minor|major] [--skip-npm]" >&2
+      echo "Usage: $0 [patch|minor|major] [--skip-npm] [-y|--yes]" >&2
       exit 1
       ;;
   esac
@@ -41,8 +43,22 @@ fi
 
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "Error: working tree is not clean" >&2
+  git status --short >&2
   exit 1
 fi
+
+PKG_NAME="$(node -p "require('./package.json').name")"
+
+if [[ "$SKIP_NPM" == false ]]; then
+  if ! npm whoami >/dev/null 2>&1; then
+    echo "Error: not logged in to npm (npm whoami failed). Use --skip-npm or run npm login." >&2
+    exit 1
+  fi
+fi
+
+# Avoid network install side-effects during release verification
+export FM_ACCESS_PCC_SKIP_CUA_DRIVER_POSTINSTALL=1
+export FM_ACCESS_PCC_AUTO_SERVE=0
 
 # --- Build & test ---
 
@@ -62,14 +78,18 @@ npm pack --dry-run
 
 # --- Confirm ---
 
-if [[ "$SKIP_NPM" == true ]]; then
-  read -r -p "Bump $VERSION_TYPE and create a GitHub release (skip npm)? [y/N] " confirm
+if [[ "$YES" != true ]]; then
+  if [[ "$SKIP_NPM" == true ]]; then
+    read -r -p "Bump $VERSION_TYPE and create a GitHub release (skip npm)? [y/N] " confirm
+  else
+    read -r -p "Bump $VERSION_TYPE, publish to npm, and create a GitHub release? [y/N] " confirm
+  fi
+  if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+    echo "Aborted."
+    exit 0
+  fi
 else
-  read -r -p "Bump $VERSION_TYPE, publish to npm, and create a GitHub release? [y/N] " confirm
-fi
-if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-  echo "Aborted."
-  exit 0
+  echo "Proceeding with non-interactive release (-y): $VERSION_TYPE (skip-npm=$SKIP_NPM)"
 fi
 
 # --- Version bump ---
@@ -78,7 +98,11 @@ npm version "$VERSION_TYPE" --no-git-tag-version
 VERSION="$(node -p "require('./package.json').version")"
 TAG="v${VERSION}"
 
+# bun.lock may reference workspace name/version — stage if changed
 git add package.json
+if [[ -f bun.lock ]]; then
+  git add bun.lock 2>/dev/null || true
+fi
 git commit -m "chore: release ${TAG}"
 
 echo "Creating git tag ${TAG}..."
@@ -90,12 +114,19 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "Packing tarball..."
-npm pack --pack-destination "$TMP_DIR"
-TARBALL="${TMP_DIR}/fm-access-pcc-${VERSION}.tgz"
+# npm pack prints the filename; also place in TMP_DIR
+PACK_OUT="$(npm pack --pack-destination "$TMP_DIR" 2>/dev/null | tail -n1)"
+TARBALL="${TMP_DIR}/${PACK_OUT}"
 if [[ ! -f "$TARBALL" ]]; then
-  echo "Error: expected tarball ${TARBALL} not found" >&2
+  # Fallback to conventional name
+  TARBALL="${TMP_DIR}/${PKG_NAME}-${VERSION}.tgz"
+fi
+if [[ ! -f "$TARBALL" ]]; then
+  echo "Error: expected tarball not found in ${TMP_DIR}" >&2
+  ls -la "$TMP_DIR" >&2 || true
   exit 1
 fi
+echo "Packed: $TARBALL"
 
 if [[ "$SKIP_NPM" == false ]]; then
   echo "Publishing to npm..."
@@ -122,11 +153,9 @@ fi
 
 RELEASE_URL="$(gh release view "${TAG}" --json url --jq .url)"
 
-# --- Cleanup (tmp dir removed by trap) ---
-
 echo ""
 echo "Release complete:"
 if [[ "$SKIP_NPM" == false ]]; then
-  echo "  npm:    fm-access-pcc@${VERSION}"
+  echo "  npm:    ${PKG_NAME}@${VERSION}"
 fi
 echo "  github: ${RELEASE_URL}"
