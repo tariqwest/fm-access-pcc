@@ -1,4 +1,4 @@
-# Port fm-acp PCC innovations into fm-access-PCC
+# Port fm-acp PCC innovations into fm-access-pcc
 
 ## Problem
 
@@ -14,7 +14,7 @@ fm-access-pcc's README and original plan still claim “`fm serve` cannot route 
 
 ## Current state
 
-### fm-access-PCC (today)
+### fm-access-pcc (today)
 
 - `src/core/respond.ts`: direct spawn for `system`; PTY spawn for `pcc`.
 - `src/core/chat.ts`: PTY `fm chat` session registry.

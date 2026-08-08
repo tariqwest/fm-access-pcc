@@ -1,4 +1,4 @@
-# fm-access-PCC
+# fm-access-pcc
 
 TypeScript library and HTTP server for Apple Foundation Models on macOS — **system** (on-device) and **pcc** (Private Cloud Compute).
 
@@ -147,7 +147,7 @@ Research notes: `.agents/research/pcc-matrix-results.md`, `.agents/research/afm-
 
 ## Related projects
 
-`fm-access-PCC` sits in a small stack of Apple FM / agent-bridge tools. Rough roles:
+`fm-access-pcc` sits in a small stack of Apple FM / agent-bridge tools. Rough roles:
 
 ```text
                     ┌─────────────────────────────┐
@@ -163,7 +163,7 @@ Research notes: `.agents/research/pcc-matrix-results.md`, `.agents/research/afm-
            │  shared PCC ideas   │ uses this package for `pcc`
            ▼                     ▼
    ┌────────────────────────────────────────────┐
-   │ fm-access-PCC  (this repo)                 │
+   │ fm-access-pcc  (this repo)                 │
    │ library + /fm + /v1 over Terminal fm serve │
    └────────────────────┬───────────────────────┘
                         ▼

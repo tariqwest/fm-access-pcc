@@ -45,11 +45,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tariqwest/fm-access-PCC.git"
+    "url": "git+https://github.com/tariqwest/fm-access-pcc.git"
   },
-  "homepage": "https://github.com/tariqwest/fm-access-PCC#readme",
+  "homepage": "https://github.com/tariqwest/fm-access-pcc#readme",
   "bugs": {
-    "url": "https://github.com/tariqwest/fm-access-PCC/issues"
+    "url": "https://github.com/tariqwest/fm-access-pcc/issues"
   },
   "publishConfig": {
     "access": "public"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release fm-access-PCC to npm and GitHub Releases.
+# Release fm-access-pcc to npm and GitHub Releases.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -146,7 +146,7 @@ if gh release view "${TAG}" >/dev/null 2>&1; then
   gh release upload "${TAG}" "${TARBALL}" --clobber
 else
   gh release create "${TAG}" \
-    --title "fm-access-PCC ${TAG}" \
+    --title "fm-access-pcc ${TAG}" \
     --generate-notes \
     "${TARBALL}"
 fi

@@ -4,9 +4,9 @@
 
 ## Project Identity
 
-- **Name**: fm-access-PCC
+- **Name**: fm-access-pcc
 - **Purpose**: TypeScript library + HTTP server wrapping Apple's macOS `fm` CLI (Foundation Models). Exposes both `system` (on-device) and `pcc` (Private Cloud Compute) models programmatically and via REST API.
-- **Repository**: https://github.com/tariqwest/fm-access-PCC
+- **Repository**: https://github.com/tariqwest/fm-access-pcc
 - **Binary**: `/usr/bin/fm` (macOS 27+)
 
 ## Tech Stack
@@ -22,7 +22,7 @@
 ## Project Structure
 
 ```
-fm-access-PCC/
+fm-access-pcc/
 ├── src/
 │   ├── core/                  # Library layer — zero HTTP dependencies
 │   │   ├── types.ts           # Zod schemas, inferred TypeScript types
