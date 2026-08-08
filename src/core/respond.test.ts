@@ -80,9 +80,9 @@ describe('buildRespondArgs', () => {
     expect(args).not.toContain('--no-stream');
   });
 
-  it('adds --load-transcript', () => {
+it('adds --resume', () => {
     const args = buildRespondArgs('Hello', { transcript: '/tmp/t.json' });
-    expect(args).toContain('--load-transcript');
+    expect(args).toContain('--resume');
     expect(args).toContain('/tmp/t.json');
   });
 

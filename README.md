@@ -1,17 +1,17 @@
-# fm-wrap
+# fm-access-PCC
 
 A TypeScript library and server that wraps Apple's macOS `fm` CLI (Foundation Models) as a programmatic API. Provides access to both on-device (`system`) and Private Cloud Compute (`pcc`) models — unlike `fm serve`, which is limited to on-device only.
 
 ## Install
 
 ```bash
-bun add fm-wrap
+bun add fm-access-pcc
 ```
 
 Or from GitHub Releases:
 
 ```bash
-bun add ./fm-wrap-0.1.0.tgz
+bun add ./fm-access-pcc-0.1.0.tgz
 ```
 
 ## Requirements
@@ -24,7 +24,7 @@ bun add ./fm-wrap-0.1.0.tgz
 Import directly — no server needed:
 
 ```typescript
-import { respond, createChatSession, getAvailableModels, countTokens } from 'fm-wrap';
+import { respond, createChatSession, getAvailableModels, countTokens } from 'fm-access-pcc';
 
 // Single-turn generation
 const result = await respond('What is Swift?', { model: 'pcc' });
@@ -53,7 +53,7 @@ const { count } = await countTokens('Hello world');
 ## Usage as a Server
 
 ```typescript
-import { createServer } from 'fm-wrap/server';
+import { createServer } from 'fm-access-pcc/server';
 
 const server = createServer({ port: 8000 });
 server.start();

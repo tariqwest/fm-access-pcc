@@ -4,9 +4,9 @@
 
 ## Project Identity
 
-- **Name**: fm-wrap
+- **Name**: fm-access-PCC
 - **Purpose**: TypeScript library + HTTP server wrapping Apple's macOS `fm` CLI (Foundation Models). Exposes both `system` (on-device) and `pcc` (Private Cloud Compute) models programmatically and via REST API.
-- **Repository**: https://github.com/tariqwest/fm-wrap
+- **Repository**: https://github.com/tariqwest/fm-access-PCC
 - **Binary**: `/usr/bin/fm` (macOS 27+)
 
 ## Tech Stack
@@ -22,7 +22,7 @@
 ## Project Structure
 
 ```
-fm-wrap/
+fm-access-PCC/
 ├── src/
 │   ├── core/                  # Library layer — zero HTTP dependencies
 │   │   ├── types.ts           # Zod schemas, inferred TypeScript types
@@ -56,8 +56,8 @@ fm-wrap/
 ```
 
 Consumers import as:
-- `import { respond, createChatSession } from 'fm-wrap'` — library only
-- `import { createServer } from 'fm-wrap/server'` — server factory
+- `import { respond, createChatSession } from 'fm-access-pcc'` — library only
+- `import { createServer } from 'fm-access-pcc/server'` — server factory
 
 ## Core Library API
 
@@ -161,7 +161,7 @@ bun run release      # Release to npm + GitHub
 ## Underlying CLI Reference
 
 The `fm` binary at `/usr/bin/fm` provides:
-- `fm respond <prompt>` — single-turn (supports `--model`, `--stream`, `--instructions`, `--image`, `--schema`, `--greedy`, `--load-transcript`, `--save-transcript`)
+- `fm respond <prompt>` — single-turn (supports `--model`, `--stream`, `--instructions`, `--image`, `--schema`, `--greedy`, `--resume`, `--save-transcript`)
 - `fm chat` — interactive multi-turn (supports `--model`, `--instructions`, `--resume`, `--continue`)
 - `fm available` — model availability check
 - `fm quota-usage` — PCC quota info

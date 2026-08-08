@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import * as pty from 'node-pty';
 import { writeFileSync, mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
@@ -11,13 +11,18 @@ export function buildRespondArgs(prompt: string, opts: RespondOptions): string[]
   if (opts.instructions) args.push('--instructions', opts.instructions);
   if (opts.greedy) args.push('--greedy');
   if (opts.image) args.push('--image', opts.image);
+  for (const img of opts.images ?? []) {
+    args.push('--image', img.path);
+    if (img.label) args.push('--label', img.label);
+  }
   if (opts.schema) {
     const schemaPath = typeof opts.schema === 'string'
       ? opts.schema
       : writeTempSchema(opts.schema);
     args.push('--schema', schemaPath);
   }
-  if (opts.transcript) args.push('--load-transcript', opts.transcript);
+  // Current macOS fm CLI uses --resume (not --load-transcript).
+  if (opts.transcript) args.push('--resume', opts.transcript);
   if (opts.saveTranscript) args.push('--save-transcript', opts.saveTranscript);
   if (opts.stream === false) args.push('--no-stream');
   if (opts.useCase) args.push('--use-case', opts.useCase);
@@ -33,30 +38,56 @@ function writeTempSchema(schema: Record<string, unknown>): string {
   return path;
 }
 
+function attachAbort(
+  kill: () => void,
+  signal?: AbortSignal,
+): () => void {
+  if (!signal) return () => undefined;
+  const onAbort = () => kill();
+  if (signal.aborted) onAbort();
+  else signal.addEventListener('abort', onAbort, { once: true });
+  return () => signal.removeEventListener('abort', onAbort);
+}
+
 export function respond(prompt: string, options?: RespondOptions & { stream: true }): AsyncIterable<RespondResult>;
 export function respond(prompt: string, options?: RespondOptions): Promise<RespondResult>;
 export function respond(prompt: string, options: RespondOptions = {}): Promise<RespondResult> | AsyncIterable<RespondResult> {
   const args = buildRespondArgs(prompt, options);
   const usePty = options.model === 'pcc';
+  const signal = options.signal;
 
   if (options.stream) {
-    return usePty ? ptyStreamRespond(args) : streamRespond(args);
+    return usePty ? ptyStreamRespond(args, signal) : streamRespond(args, signal);
   }
-  return usePty ? ptyBufferedRespond(args) : bufferedRespond(args);
+  return usePty ? ptyBufferedRespond(args, signal) : bufferedRespond(args, signal);
 }
 
 // -- Standard spawn (for on-device / system model) --
 
-async function bufferedRespond(args: string[]): Promise<RespondResult> {
-  const child = spawn('fm', args);
+async function bufferedRespond(args: string[], signal?: AbortSignal): Promise<RespondResult> {
+  const child = spawn('fm', args) as ChildProcessWithoutNullStreams;
   let stdout = '';
   let stderr = '';
 
   child.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
   child.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
 
+  const detach = attachAbort(() => {
+    child.kill('SIGTERM');
+    setTimeout(() => { if (!child.killed) child.kill('SIGKILL'); }, 1500).unref();
+  }, signal);
+
   return new Promise<RespondResult>((resolve, reject) => {
+    child.on('error', (err) => {
+      detach();
+      reject(err);
+    });
     child.on('close', (code) => {
+      detach();
+      if (signal?.aborted) {
+        reject(new Error('cancelled'));
+        return;
+      }
       if (code !== 0) {
         reject(new Error(stderr.trim() || `fm exited with code ${code}`));
       } else {
@@ -66,11 +97,20 @@ async function bufferedRespond(args: string[]): Promise<RespondResult> {
   });
 }
 
-async function* streamRespond(args: string[]): AsyncIterable<RespondResult> {
-  const child = spawn('fm', args);
+async function* streamRespond(args: string[], signal?: AbortSignal): AsyncIterable<RespondResult> {
+  const child = spawn('fm', args) as ChildProcessWithoutNullStreams;
+  const detach = attachAbort(() => {
+    child.kill('SIGTERM');
+    setTimeout(() => { if (!child.killed) child.kill('SIGKILL'); }, 1500).unref();
+  }, signal);
 
-  for await (const chunk of child.stdout) {
-    yield { text: chunk.toString() };
+  try {
+    for await (const chunk of child.stdout) {
+      if (signal?.aborted) break;
+      yield { text: chunk.toString() };
+    }
+  } finally {
+    detach();
   }
 }
 
@@ -83,7 +123,7 @@ function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
 }
 
-async function ptyBufferedRespond(args: string[]): Promise<RespondResult> {
+async function ptyBufferedRespond(args: string[], signal?: AbortSignal): Promise<RespondResult> {
   return new Promise<RespondResult>((resolve, reject) => {
     let output = '';
     const proc = pty.spawn(FM_PATH, args, {
@@ -94,12 +134,27 @@ async function ptyBufferedRespond(args: string[]): Promise<RespondResult> {
       env: process.env as Record<string, string>,
     });
 
+    const detach = attachAbort(() => {
+      try { proc.kill(); } catch { /* ignore */ }
+    }, signal);
+
     proc.onData((data: string) => {
       output += data;
     });
 
     proc.onExit(({ exitCode }) => {
+      detach();
+      if (signal?.aborted) {
+        reject(new Error('cancelled'));
+        return;
+      }
       const cleaned = stripAnsi(output).trim();
+      // fm may exit 0 while printing PCC context errors into the PTY stream
+      if (/Private Cloud Compute is not available/i.test(cleaned) ||
+          /Please use the Terminal app/i.test(cleaned)) {
+        reject(new Error(cleaned));
+        return;
+      }
       if (exitCode !== 0) {
         reject(new Error(cleaned || `fm exited with code ${exitCode}`));
       } else {
@@ -109,7 +164,7 @@ async function ptyBufferedRespond(args: string[]): Promise<RespondResult> {
   });
 }
 
-async function* ptyStreamRespond(args: string[]): AsyncIterable<RespondResult> {
+async function* ptyStreamRespond(args: string[], signal?: AbortSignal): AsyncIterable<RespondResult> {
   const proc = pty.spawn(FM_PATH, args, {
     name: 'xterm-color',
     cols: 200,
@@ -121,6 +176,10 @@ async function* ptyStreamRespond(args: string[]): AsyncIterable<RespondResult> {
   let done = false;
   let pendingResolve: ((value: IteratorResult<RespondResult>) => void) | null = null;
   const queue: string[] = [];
+
+  const detach = attachAbort(() => {
+    try { proc.kill(); } catch { /* ignore */ }
+  }, signal);
 
   proc.onData((data: string) => {
     const cleaned = stripAnsi(data);
@@ -137,6 +196,7 @@ async function* ptyStreamRespond(args: string[]): AsyncIterable<RespondResult> {
 
   proc.onExit(() => {
     done = true;
+    detach();
     if (pendingResolve) {
       const resolve = pendingResolve;
       pendingResolve = null;
@@ -144,15 +204,20 @@ async function* ptyStreamRespond(args: string[]): AsyncIterable<RespondResult> {
     }
   });
 
-  while (!done || queue.length > 0) {
-    if (queue.length > 0) {
-      yield { text: queue.shift()! };
-    } else if (!done) {
-      const result = await new Promise<IteratorResult<RespondResult>>((resolve) => {
-        pendingResolve = resolve;
-      });
-      if (result.done) break;
-      yield result.value;
+  try {
+    while (!done || queue.length > 0) {
+      if (signal?.aborted) break;
+      if (queue.length > 0) {
+        yield { text: queue.shift()! };
+      } else if (!done) {
+        const result = await new Promise<IteratorResult<RespondResult>>((resolve) => {
+          pendingResolve = resolve;
+        });
+        if (result.done) break;
+        yield result.value;
+      }
     }
+  } finally {
+    detach();
   }
 }

@@ -64,7 +64,7 @@ describe('countTokens', () => {
     mockSpawn.mockReturnValue(createMockProcess('200\n'));
     await countTokens('Follow up', { transcript: '/tmp/t.json' });
     const args = mockSpawn.mock.calls[0][1];
-    expect(args).toContain('--load-transcript');
+expect(args).toContain('--resume');
     expect(args).toContain('/tmp/t.json');
   });
 

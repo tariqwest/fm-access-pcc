@@ -30,7 +30,7 @@ function buildTokenCountArgs(prompt: string, opts: TokenCountOptions): string[] 
   const args = ['token-count'];
   if (opts.instructions) args.push('--instructions', opts.instructions);
   if (opts.image) args.push('--image', opts.image);
-  if (opts.transcript) args.push('--load-transcript', opts.transcript);
+if (opts.transcript) args.push('--resume', opts.transcript);
   args.push('--quiet');
   args.push(prompt);
   return args;

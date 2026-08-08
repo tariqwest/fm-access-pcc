@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release fm-wrap to npm and GitHub Releases.
+# Release fm-access-PCC to npm and GitHub Releases.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -91,7 +91,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "Packing tarball..."
 npm pack --pack-destination "$TMP_DIR"
-TARBALL="${TMP_DIR}/fm-wrap-${VERSION}.tgz"
+TARBALL="${TMP_DIR}/fm-access-pcc-${VERSION}.tgz"
 if [[ ! -f "$TARBALL" ]]; then
   echo "Error: expected tarball ${TARBALL} not found" >&2
   exit 1
@@ -115,7 +115,7 @@ if gh release view "${TAG}" >/dev/null 2>&1; then
   gh release upload "${TAG}" "${TARBALL}" --clobber
 else
   gh release create "${TAG}" \
-    --title "fm-wrap ${TAG}" \
+    --title "fm-access-PCC ${TAG}" \
     --generate-notes \
     "${TARBALL}"
 fi
@@ -127,6 +127,6 @@ RELEASE_URL="$(gh release view "${TAG}" --json url --jq .url)"
 echo ""
 echo "Release complete:"
 if [[ "$SKIP_NPM" == false ]]; then
-  echo "  npm:    fm-wrap@${VERSION}"
+  echo "  npm:    fm-access-pcc@${VERSION}"
 fi
 echo "  github: ${RELEASE_URL}"

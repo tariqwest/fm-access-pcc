@@ -13,13 +13,21 @@ export const RespondOptionsSchema = z.object({
   stream: z.boolean().optional(),
   greedy: z.boolean().optional(),
   image: z.string().optional(),
+  /** Additional image paths (paired with optional labels). */
+  images: z.array(z.object({
+    path: z.string(),
+    label: z.string().optional(),
+  })).optional(),
   schema: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
   transcript: z.string().optional(),
   saveTranscript: z.string().optional(),
   useCase: z.enum(['general', 'content-tagging']).optional(),
   guardrails: z.enum(['default', 'permissive-content-transformations']).optional(),
 });
-export type RespondOptions = z.infer<typeof RespondOptionsSchema>;
+export type RespondOptions = z.infer<typeof RespondOptionsSchema> & {
+  /** Abort in-flight fm process (not part of zod JSON schema). */
+  signal?: AbortSignal;
+};
 
 export const RespondResultSchema = z.object({
   text: z.string(),

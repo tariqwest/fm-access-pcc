@@ -72,7 +72,7 @@ The project is structured as a **layered architecture** with two consumption mod
 ### Package Layout
 
 ```
-fm-wrap/
+fm-access-pcc/
 ├── src/
 │   ├── core/                  # Library layer (no HTTP dependency)
 │   │   ├── index.ts           # Public API barrel export
@@ -98,7 +98,7 @@ fm-wrap/
 **1. As an importable library (no server running)**
 
 ```typescript
-import { respond, createChatSession, getAvailableModels, countTokens } from 'fm-wrap';
+import { respond, createChatSession, getAvailableModels, countTokens } from 'fm-access-pcc';
 
 // Single-turn
 const result = await respond('What is Swift?', { model: 'pcc', stream: false });
@@ -128,7 +128,7 @@ const { count } = await countTokens('Hello world');
 **2. As a standalone server**
 
 ```typescript
-import { createServer } from 'fm-wrap/server';
+import { createServer } from 'fm-access-pcc/server';
 
 const server = createServer({ port: 8000 });
 await server.start();
@@ -137,14 +137,14 @@ await server.start();
 Or via CLI:
 ```bash
 pnpm start          # runs the server on default port
-fm-wrap serve       # (optional bin entry)
+fm-access-pcc serve       # (optional bin entry)
 ```
 
 ### Package Exports (`package.json`)
 
 ```json
 {
-  "name": "fm-wrap",
+  "name": "fm-access-pcc",
   "exports": {
     ".": "./dist/core/index.js",
     "./server": "./dist/server/index.js"
@@ -154,7 +154,7 @@ fm-wrap serve       # (optional bin entry)
     "./server": "./dist/server/index.d.ts"
   },
   "bin": {
-    "fm-wrap": "./dist/cli.js"
+    "fm-access-pcc": "./dist/cli.js"
   }
 }
 ```

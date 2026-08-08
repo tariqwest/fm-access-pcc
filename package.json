@@ -1,7 +1,7 @@
 {
-  "name": "fm-wrap",
+  "name": "fm-access-pcc",
   "version": "0.1.3",
-  "description": "Wraps Apple's macOS fm CLI as a library and RESTful web service",
+  "description": "Access Apple Foundation Models (system + PCC) as a TypeScript library and REST service",
   "type": "module",
   "exports": {
     ".": {
@@ -33,17 +33,18 @@
     "fm",
     "pcc",
     "openai-compatible",
-    "macos"
+    "macos",
+    "fm-access-pcc"
   ],
   "author": "Tariq West",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tariqwest/fm-wrap.git"
+    "url": "git+https://github.com/tariqwest/fm-access-PCC.git"
   },
-  "homepage": "https://github.com/tariqwest/fm-wrap#readme",
+  "homepage": "https://github.com/tariqwest/fm-access-PCC#readme",
   "bugs": {
-    "url": "https://github.com/tariqwest/fm-wrap/issues"
+    "url": "https://github.com/tariqwest/fm-access-PCC/issues"
   },
   "publishConfig": {
     "access": "public"
