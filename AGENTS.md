@@ -33,7 +33,7 @@ fm-access-pcc/
 │   │   ├── respond.ts         # Public respond() → transport
 │   │   ├── chat.ts            # History sessions (optional pty-chat)
 │   │   ├── models.ts          # Availability + quota
-│   │   ├── tokens.ts          # fm token-count
+│   │   ├── tokens.ts          # fm count-tokens
 │   │   └── index.ts           # Barrel export
 │   ├── server/                # HTTP adapter layer (Hono)
 │   │   ├── routes/
@@ -167,9 +167,9 @@ bun run release      # Release to npm + GitHub
 The `fm` binary at `/usr/bin/fm` provides:
 - `fm respond <prompt>` — single-turn (supports `--model`, `--stream`, `--instructions`, `--image`, `--schema`, `--greedy`, `--resume`, `--save-transcript`)
 - `fm chat` — interactive multi-turn (supports `--model`, `--instructions`, `--resume`, `--continue`)
-- `fm available` — model availability check
+- `fm models` — model availability check
 - `fm quota-usage` — PCC quota info
-- `fm token-count` — token counting (system model only, `--quiet` for bare integer)
+- `fm count-tokens` — token counting (system model only, `--quiet` for bare integer)
 - `fm schema object` — JSON schema generation helper
 - `fm serve --socket` — preferred multi-client path; system+pcc when Terminal-hosted
 

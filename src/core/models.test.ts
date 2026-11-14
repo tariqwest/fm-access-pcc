@@ -49,8 +49,8 @@ describe('getAvailableModels', () => {
 describe('getAvailableModelsDirect', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('parses fm available output', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('system: available\npcc: unavailable\n'));
+  it('parses fm models output', async () => {
+    mockSpawn.mockReturnValue(createMockProcess('  Apple Foundation Models\n  ✓ system (AFM 3 Core)\n  ✗ pcc (Private Cloud Compute is not available in this context.)\n', 1));
     const models = await getAvailableModelsDirect();
     expect(models).toEqual([
       { model: 'system', available: true, source: 'fm' },
@@ -59,11 +59,21 @@ describe('getAvailableModelsDirect', () => {
   });
 });
 
+describe('local model filtering', () => {
+  it('does not pass unsupported --model to fm models', async () => {
+    mockSpawn.mockReturnValue(createMockProcess('  ✓ system (AFM 3 Core)\n  ✗ pcc\n'));
+    expect(await getAvailableModelsDirect('system')).toEqual([
+      { model: 'system', available: true, source: 'fm' },
+    ]);
+    expect(mockSpawn).toHaveBeenLastCalledWith(expect.any(String), ['models']);
+  });
+});
+
 describe('getQuotaUsage', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('parses quota lines', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('system: 0\npcc: 10%\n'));
+    mockSpawn.mockReturnValue(createMockProcess('System: Not applicable (quota only applies to PCC)\nPCC: 10%\n'));
     const q = await getQuotaUsage();
     expect(q[0].model).toBe('system');
     expect(q[1].usage).toContain('10%');

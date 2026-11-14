@@ -18,30 +18,28 @@ function runFmCommand(args: string[]): Promise<string> {
 
   return new Promise((resolve, reject) => {
     child.on('close', (code) => {
-      if (code !== 0) reject(new Error(stderr.trim() || `fm exited with code ${code}`));
+      const hasModelResults = args[0] === 'models' && code === 1 && parseAvailability(stdout).length > 0;
+      if (code !== 0 && !hasModelResults) reject(new Error(stderr.trim() || `fm exited with code ${code}`));
       else resolve(stdout.trim());
     });
   });
 }
 
-/** Direct `fm available` parse (current process context; usually no PCC). */
+/** Direct `fm models` parse (current process context; usually no PCC). */
 export async function getAvailableModelsDirect(model?: FmModel): Promise<ModelAvailability[]> {
-  const args = ['available'];
-  if (model) args.push('--model', model);
-  const output = await runFmCommand(args);
-  return parseAvailability(output);
+  const output = await runFmCommand(['models']);
+  const models = parseAvailability(output);
+  return model ? models.filter((entry) => entry.model === model) : models;
 }
 
 function parseAvailability(output: string): ModelAvailability[] {
   const results: ModelAvailability[] = [];
   for (const line of output.split('\n')) {
-    const match = line.match(/^(system|pcc):\s*(.+)$/);
+    const match = line.match(/^\s*([✓✗])\s+(system|pcc)\b/);
     if (match) {
       results.push({
-        model: match[1] as FmModel,
-        available:
-          match[2].trim().toLowerCase().includes('available') &&
-          !match[2].trim().toLowerCase().includes('unavailable'),
+        model: match[2] as FmModel,
+        available: match[1] === '✓',
         source: 'fm',
       });
     }
@@ -49,7 +47,7 @@ function parseAvailability(output: string): ModelAvailability[] {
   return results;
 }
 
-/** Prefer Terminal-hosted fm serve health; fall back to direct fm available. */
+/** Prefer Terminal-hosted fm serve health; fall back to direct fm models. */
 export async function getAvailableModels(model?: FmModel): Promise<ModelAvailability[]> {
   return transportGetAvailableModels(model);
 }
@@ -64,10 +62,10 @@ export async function getQuotaUsage(model?: FmModel): Promise<QuotaUsage[]> {
 function parseQuotaUsage(output: string): QuotaUsage[] {
   const results: QuotaUsage[] = [];
   for (const line of output.split('\n')) {
-    const match = line.match(/^(system|pcc):\s*(.+)$/);
+    const match = line.match(/^\s*(system|pcc):\s*(.+)$/i);
     if (match) {
       results.push({
-        model: match[1] as FmModel,
+        model: match[1].toLowerCase() as FmModel,
         usage: match[2].trim(),
       });
     }

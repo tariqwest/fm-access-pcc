@@ -27,10 +27,10 @@ export async function countTokens(prompt: string, options: TokenCountOptions = {
 }
 
 function buildTokenCountArgs(prompt: string, opts: TokenCountOptions): string[] {
-  const args = ['token-count'];
+  const args = ['count-tokens'];
   if (opts.instructions) args.push('--instructions', opts.instructions);
   if (opts.image) args.push('--image', opts.image);
-if (opts.transcript) args.push('--resume', opts.transcript);
+  if (opts.transcript) args.push('--transcript', opts.transcript);
   args.push('--quiet');
   args.push(prompt);
   return args;

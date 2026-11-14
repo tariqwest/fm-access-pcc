@@ -41,7 +41,7 @@ describe('countTokens', () => {
     mockSpawn.mockReturnValue(createMockProcess('42\n'));
     const result = await countTokens('Hello world');
     expect(result.count).toBe(42);
-    expect(mockSpawn).toHaveBeenCalledWith('fm', expect.arrayContaining(['token-count', '--quiet', 'Hello world']));
+    expect(mockSpawn).toHaveBeenCalledWith('fm', expect.arrayContaining(['count-tokens', '--quiet', 'Hello world']));
   });
 
   it('passes instructions option', async () => {
@@ -64,7 +64,8 @@ describe('countTokens', () => {
     mockSpawn.mockReturnValue(createMockProcess('200\n'));
     await countTokens('Follow up', { transcript: '/tmp/t.json' });
     const args = mockSpawn.mock.calls[0][1];
-expect(args).toContain('--resume');
+    expect(args).toContain('--transcript');
+    expect(args).not.toContain('--resume');
     expect(args).toContain('/tmp/t.json');
   });
 
