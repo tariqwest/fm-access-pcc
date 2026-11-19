@@ -4,7 +4,6 @@ export { createChatSession, closeChatSession, getSession } from './chat.js';
 export { getAvailableModels, getAvailableModelsDirect, getQuotaUsage } from './models.js';
 export { countTokens } from './tokens.js';
 export { ensureFmServe } from './serve-bootstrap.js';
-export { ensureCuaDriver, resolveCuaDriverBin } from './cua-driver.js';
 export { fmServeHealth, fmServeAvailable } from './fm-serve.js';
 export { defaultFmServeSocket, configBaseDir } from './config.js';
 export {

@@ -1,8 +1,7 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { ensureCuaDriver, resolveCuaDriverBin } from './cua-driver.js';
 import { ensurePrivateDir } from './private-fs.js';
 import { fmServeHealth } from './fm-serve.js';
 import {
@@ -18,7 +17,7 @@ import {
 
 export type ServeBootstrapResult =
   | { status: 'already_running'; socketPath: string }
-  | { status: 'started'; socketPath: string; method: 'cua-driver' | 'open-terminal' }
+  | { status: 'started'; socketPath: string; method: 'applescript' | 'open-terminal' }
   | { status: 'declined'; reason: string }
   | { status: 'failed'; reason: string };
 
@@ -30,8 +29,6 @@ export type ServeBootstrapOptions = {
   env?: NodeJS.ProcessEnv;
   spawnFn?: typeof spawn;
   healthFn?: typeof fmServeHealth;
-  resolveCuaDriver?: (env: NodeJS.ProcessEnv) => string | null;
-  ensureCuaDriverFn?: typeof ensureCuaDriver;
 };
 
 export function buildServeLauncherScript(socketPath: string, fmBin = '/usr/bin/fm'): string {
@@ -72,28 +69,39 @@ export async function ensureServeLauncher(opts: {
   return opts.launcherPath;
 }
 
-function spawnDetached(
-  spawner: typeof spawn,
-  cmd: string,
-  args: string[],
-  env: NodeJS.ProcessEnv,
-): ChildProcessWithoutNullStreams {
-  const child = spawner(cmd, args, {
-    env,
-    stdio: 'ignore',
-    detached: true,
-  }) as ChildProcessWithoutNullStreams;
-  child.unref();
-  return child;
+export function buildAppleScriptLaunchArgs(launcherPath: string): string[] {
+  return [
+    '-e', 'on run argv',
+    '-e', 'tell application "Terminal" to do script (quoted form of (item 1 of argv))',
+    '-e', 'end run', launcherPath,
+  ];
 }
 
-export function buildCuaDriverLaunchArgs(launcherPath: string): string[] {
-  const payload = {
-    bundle_id: 'com.apple.Terminal',
-    additional_arguments: [launcherPath],
-    creates_new_application_instance: true,
-  };
-  return ['call', 'launch_app', JSON.stringify(payload), '--compact'];
+function runLauncher(spawner: typeof spawn, command: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawner(command, args, { env, stdio: ['ignore', 'ignore', 'pipe'] });
+    } catch (err) {
+      resolve((err as Error).message);
+      return;
+    }
+    let stderr = '';
+    child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    let finished = false;
+    const timer = setTimeout(() => {
+      child.kill();
+      finish('launch timed out');
+    }, Math.max(1, timeoutMs));
+    function finish(error: string | null) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      resolve(error);
+    }
+    child.on('error', (error) => finish(error.message));
+    child.on('close', (code) => finish(code === 0 ? null : stderr.trim() || `exit code ${code}`));
+  });
 }
 
 export async function waitForFmServe(
@@ -112,20 +120,25 @@ export async function waitForFmServe(
   return Boolean(await healthFn(socketPath, signal));
 }
 
-/**
- * Ensure Terminal-hosted `fm serve --socket` is reachable.
- * Happy path (default ON): ensure cua-driver, then launch Terminal with the serve script.
- * Disable with FM_ACCESS_PCC_AUTO_SERVE=0.
- */
-export async function ensureFmServe(opts: ServeBootstrapOptions = {}): Promise<ServeBootstrapResult> {
+const inFlight = new Map<string, Promise<ServeBootstrapResult>>();
+
+/** Ensure Terminal-hosted `fm serve --socket` is reachable. */
+export function ensureFmServe(opts: ServeBootstrapOptions = {}): Promise<ServeBootstrapResult> {
+  const socketPath = opts.socketPath ?? defaultFmServeSocket(opts.env ?? process.env);
+  const existing = inFlight.get(socketPath);
+  if (existing) return existing;
+  const task = startFmServe(opts, socketPath);
+  inFlight.set(socketPath, task);
+  void task.finally(() => { if (inFlight.get(socketPath) === task) inFlight.delete(socketPath); }).catch(() => {});
+  return task;
+}
+
+async function startFmServe(opts: ServeBootstrapOptions, socketPath: string): Promise<ServeBootstrapResult> {
   const env = opts.env ?? process.env;
-  const socketPath = opts.socketPath ?? defaultFmServeSocket(env);
   const launcherPath = opts.launcherPath ?? defaultServeLauncherPath(env);
   const timeoutMs = opts.timeoutMs ?? readEnvInt(env, AUTO_SERVE_TIMEOUT_ENV, 12_000);
   const healthFn = opts.healthFn ?? fmServeHealth;
   const spawner = opts.spawnFn ?? spawn;
-  const resolveCua = opts.resolveCuaDriver ?? resolveCuaDriverBin;
-  const ensureCua = opts.ensureCuaDriverFn ?? ensureCuaDriver;
 
   if (await healthFn(socketPath)) {
     return { status: 'already_running', socketPath };
@@ -137,7 +150,7 @@ export async function ensureFmServe(opts: ServeBootstrapOptions = {}): Promise<S
       status: 'declined',
       reason:
         `fm serve not running at ${socketPath}; start it in Terminal.app, or leave ${AUTO_SERVE_ENV} enabled ` +
-        `(default) to auto-launch via cua-driver / open -a Terminal`,
+        `(default) to auto-launch Terminal`,
     };
   }
 
@@ -155,43 +168,27 @@ export async function ensureFmServe(opts: ServeBootstrapOptions = {}): Promise<S
   }
 
   const errors: string[] = [];
-
-  let cua = resolveCua(env);
-  if (!cua) {
-    const ensured = await ensureCua({ env });
-    if (ensured.status === 'present' || ensured.status === 'installed') {
-      cua = ensured.bin;
-      if (ensured.status === 'installed') {
-        console.error(`[fm-access-pcc] installed cua-driver at ${ensured.bin}`);
-      }
-    } else {
-      errors.push(`cua-driver: ${ensured.reason}`);
+  const methods = [
+    { method: 'applescript' as const, label: 'AppleScript', command: '/usr/bin/osascript', args: buildAppleScriptLaunchArgs(launcherPath) },
+    { method: 'open-terminal' as const, label: 'open -a Terminal', command: '/usr/bin/open', args: ['-a', 'Terminal', launcherPath] },
+  ];
+  for (const item of methods) {
+    if (errors.length && await healthFn(socketPath)) {
+      return { status: 'started', socketPath, method: 'applescript' };
     }
-  }
-  if (cua) {
-    try {
-      spawnDetached(spawner, cua, buildCuaDriverLaunchArgs(launcherPath), env);
-      if (await waitForFmServe(socketPath, timeoutMs, healthFn)) {
-        return { status: 'started', socketPath, method: 'cua-driver' };
-      }
-      errors.push(`cua-driver: socket not healthy within ${timeoutMs}ms`);
-    } catch (err) {
-      errors.push(`cua-driver: ${(err as Error).message}`);
+    const error = await runLauncher(spawner, item.command, item.args, env, timeoutMs);
+    if (error) {
+      errors.push(`${item.label}: ${error}`);
+      continue;
     }
-  }
-
-  try {
-    spawnDetached(spawner, 'open', ['-a', 'Terminal', launcherPath], env);
     if (await waitForFmServe(socketPath, timeoutMs, healthFn)) {
-      return { status: 'started', socketPath, method: 'open-terminal' };
+      return { status: 'started', socketPath, method: item.method };
     }
-    errors.push(`open -a Terminal: socket not healthy within ${timeoutMs}ms`);
-  } catch (err) {
-    errors.push(`open -a Terminal: ${(err as Error).message}`);
+    errors.push(`${item.label}: socket not healthy within ${timeoutMs}ms`);
   }
 
   return {
     status: 'failed',
-    reason: `${errors.join(' | ')}. Manual: open -a Terminal '${launcherPath}' (with ${SERVE_SOCK_ENV}=${socketPath})`,
+    reason: `${errors.join(' | ')}. Start fm serve manually in Terminal using ${SERVE_SOCK_ENV}=${socketPath}`,
   };
 }

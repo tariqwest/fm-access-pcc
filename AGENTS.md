@@ -29,7 +29,6 @@ fm-access-pcc/
 │   │   ├── transport.ts       # serve → lab-bridge → direct fm routing
 │   │   ├── fm-serve.ts        # HTTP client over fm serve Unix socket
 │   │   ├── serve-bootstrap.ts # Terminal-hosted serve auto-start
-│   │   ├── cua-driver.ts      # cua-driver resolve/install
 │   │   ├── respond.ts         # Public respond() → transport
 │   │   ├── chat.ts            # History sessions (optional pty-chat)
 │   │   ├── models.ts          # Availability + quota
@@ -158,7 +157,7 @@ bun run release      # Release to npm + GitHub
 
 1. **Library-first architecture**: Core has zero HTTP dependencies. Server is a thin adapter.
 2. **Default chat is history + transport**: Sessions keep messages and call serve/completions. Optional `transport: 'pty-chat'` uses node-pty for legacy on-device chat only (not PCC).
-3. **Terminal-hosted `fm serve --socket` for PCC**: Validated multi-client PCC path. Auto-started via cua-driver / `open -a Terminal`. Direct/PTY `fm respond` is not a PCC path.
+3. **Terminal-hosted `fm serve --socket` for PCC**: Validated multi-client PCC path. Auto-started via AppleScript with `open -a Terminal` fallback. Direct/PTY `fm respond` is not a PCC path.
 4. **Dual API surface**: Native `/fm/*` routes expose full CLI capabilities. OpenAI `/v1/*` routes provide compatibility with existing tooling.
 5. **Zod validation**: All inputs/outputs have runtime-validated schemas that also produce TypeScript types.
 

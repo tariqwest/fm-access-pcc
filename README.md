@@ -10,12 +10,6 @@ TypeScript library and HTTP server for Apple Foundation Models on macOS — **sy
 bun add fm-access-pcc
 ```
 
-Happy path installs **cua-driver** (for auto-starting Terminal-hosted serve) via postinstall. Skip with:
-
-```bash
-FM_ACCESS_PCC_SKIP_CUA_DRIVER_POSTINSTALL=1 bun add fm-access-pcc
-```
-
 ## Requirements
 
 - macOS 27+ with `/usr/bin/fm`
@@ -78,10 +72,11 @@ POST   /v1/chat/completions
 
 Default **auto-serve** (ON):
 
-1. Ensure `cua-driver` (postinstall / first use)
-2. Write `~/.config/fm-access-pcc/start-fm-serve.command`
-3. Launch Terminal via `cua-driver call launch_app` (fallback: `open -a Terminal`)
-4. Wait for `GET /health` on the Unix socket
+1. Write `~/.config/fm-access-pcc/start-fm-serve.command`.
+2. Launch it in Terminal using AppleScript, falling back to `open -a Terminal`.
+3. Wait for `GET /health` on the Unix socket.
+
+macOS may request Automation permission to control Terminal. Both methods worked in an isolated PCC test, but availability can vary by environment. Concurrent starts for the same socket are coalesced within one process; separate processes are not coordinated.
 
 Manual:
 
@@ -93,6 +88,8 @@ fm serve --socket ~/.config/fm-access-pcc/fm.sock
 
 Disable auto-start: `FM_ACCESS_PCC_AUTO_SERVE=0`.
 
+**API migration:** `ensureCuaDriver` and `resolveCuaDriverBin` have been removed. A successful `ensureFmServe` launch now reports `method: 'applescript'` instead of `'cua-driver'`; the fallback remains `'open-terminal'`.
+
 Share a socket with fm-acp:
 
 ```bash
@@ -103,7 +100,7 @@ export FM_ACCESS_PCC_SERVE_SOCK="$HOME/.config/fm-acp/fm.sock"
 
 - PTY-wrapped `fm respond --model pcc`
 - Background / non-Terminal `fm serve`
-- `osascript` `do script` to launch serve
+- Running `fm serve` with `nohup` and redirected standard streams: in testing, the server survived closing its Terminal window, but PCC was unavailable even before the window closed. Keep the validated foreground Terminal session open for PCC.
 - Assuming a helper process under Terminal makes child `fm respond` PCC-capable
 
 ## Environment
@@ -114,12 +111,8 @@ export FM_ACCESS_PCC_SERVE_SOCK="$HOME/.config/fm-acp/fm.sock"
 | `FM_ACCESS_PCC_AUTO_SERVE` | Default **on**. `0`/`false` disables auto Terminal launch |
 | `FM_ACCESS_PCC_AUTO_SERVE_TIMEOUT_MS` | Wait for serve health (default `12000`) |
 | `FM_ACCESS_PCC_SERVE_LAUNCHER` | Path to `start-fm-serve.command` |
-| `FM_ACCESS_PCC_ENSURE_CUA_DRIVER` | Default **on**. Install cua-driver when missing |
-| `FM_ACCESS_PCC_SKIP_CUA_DRIVER_POSTINSTALL` | `1` skips install-time ensure |
 | `FM_ACCESS_PCC_LAB_BRIDGE` | Default **on** probe of Lab `connection.json` if present |
 | `FM_BIN` / `FM_BIN_PATH` | Path to `fm` |
-| `CUA_DRIVER_BIN` / `CUA_DRIVER_PATH` | cua-driver binary |
-| `CUA_DRIVER_INSTALL_URL` | Installer URL |
 | `AFM_BRIDGE_DESCRIPTOR` | Lab bridge descriptor path |
 
 ## Development
@@ -137,8 +130,7 @@ bun run build
 src/core/
   transport.ts       # serve → lab-bridge → direct fm
   fm-serve.ts        # HTTP over Unix socket
-  serve-bootstrap.ts # Terminal auto-start (cua-driver / open -a)
-  cua-driver.ts
+  serve-bootstrap.ts # Terminal auto-start (AppleScript / open -a)
   respond.ts / chat.ts / models.ts
 src/server/          # Hono adapter
 ```
@@ -200,7 +192,6 @@ Research notes: `.agents/research/pcc-matrix-results.md`, `.agents/research/afm-
 | **[acp-router](https://github.com/tariqwest/acp-router)** | LiteLLM-oriented ACP routing; related agent-gateway ecosystem, not FM-specific. |
 | **Apple `fm serve`** | Built-in OpenAI-shaped local server. Inspiration and production transport: when **Terminal-hosted**, it is the validated multi-client PCC path this package clients. |
 | **Foundation Lab / `afm`** | Community Lab app + CLI; historical Agent Bridge (`connection.json`) is an optional secondary PCC candidate (see research notes). Homebrew `afm` alone is on-device-oriented. |
-| **[Cua cua-driver](https://cua.ai/driver/install.sh)** | Used to auto-launch Terminal for PCC-capable `fm serve` (same happy path as fm-acp). |
 
 ### When to use what
 

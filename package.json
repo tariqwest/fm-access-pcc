@@ -26,9 +26,7 @@
     "start": "bun dist/server/index.js",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "bun run build && bun run test && bun run typecheck",
-    "release": "bash scripts/release.sh",
-    "ensure:cua-driver": "node scripts/ensure-cua-driver.mjs",
-    "postinstall": "node scripts/ensure-cua-driver.mjs"
+    "release": "bash scripts/release.sh"
   },
   "keywords": [
     "apple",
@@ -38,7 +36,6 @@
     "openai-compatible",
     "macos",
     "fm-access-pcc",
-    "cua-driver",
     "fm-serve"
   ],
   "author": "Tariq West",

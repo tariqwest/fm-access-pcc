@@ -56,8 +56,7 @@ if [[ "$SKIP_NPM" == false ]]; then
   fi
 fi
 
-# Avoid network install side-effects during release verification
-export FM_ACCESS_PCC_SKIP_CUA_DRIVER_POSTINSTALL=1
+# Avoid launching Terminal during release verification
 export FM_ACCESS_PCC_AUTO_SERVE=0
 
 # --- Build & test ---
