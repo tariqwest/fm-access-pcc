@@ -1,130 +1,135 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  FmModelSchema,
-  RespondOptionsSchema,
-  RespondResultSchema,
   ChatSessionOptionsSchema,
+  FmModelSchema,
   ModelAvailabilitySchema,
   QuotaUsageSchema,
+  RespondOptionsSchema,
+  RespondResultSchema,
   TokenCountOptionsSchema,
   TokenCountResultSchema,
 } from './types.js';
 
-describe('Core Zod Schemas', () => {
-  describe('FmModelSchema', () => {
-    it('accepts valid models', () => {
-      expect(FmModelSchema.parse('system')).toBe('system');
-      expect(FmModelSchema.parse('pcc')).toBe('pcc');
-    });
+describe('FmModelSchema', () => {
+  it.each(['system', 'pcc'])('accepts %s', (model) => {
+    expect(FmModelSchema.parse(model)).toBe(model);
+  });
 
-    it('rejects invalid models', () => {
-      expect(() => FmModelSchema.parse('gpt-4')).toThrow();
-      expect(() => FmModelSchema.parse('')).toThrow();
+  it('rejects unknown models', () => {
+    expect(() => FmModelSchema.parse('gpt-4')).toThrow();
+  });
+});
+
+describe('RespondOptionsSchema', () => {
+  it('accepts retained response options and history', () => {
+    expect(RespondOptionsSchema.parse({
+      model: 'pcc',
+      instructions: 'Be concise',
+      stream: true,
+      history: [
+        { role: 'system', content: 'System context' },
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi' },
+      ],
+    })).toEqual({
+      model: 'pcc',
+      instructions: 'Be concise',
+      stream: true,
+      history: [
+        { role: 'system', content: 'System context' },
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi' },
+      ],
     });
   });
 
-  describe('RespondOptionsSchema', () => {
-    it('accepts empty options', () => {
-      expect(RespondOptionsSchema.parse({})).toEqual({});
-    });
+  it('strips obsolete direct CLI options', () => {
+    expect(RespondOptionsSchema.parse({
+      model: 'system',
+      greedy: true,
+      image: '/tmp/image.png',
+      schema: '/tmp/schema.json',
+      transcript: '/tmp/chat.json',
+      saveTranscript: 'chat',
+      useCase: 'general',
+      guardrails: 'default',
+    })).toEqual({ model: 'system' });
+  });
 
-    it('accepts full options', () => {
-      const opts = {
-        model: 'pcc',
-        instructions: 'Be concise',
-        stream: true,
-        greedy: false,
-        image: '/path/to/img.jpg',
-        schema: { name: 'Person', properties: {} },
-        transcript: '/path/to/transcript.json',
-        saveTranscript: 'my-session',
-        useCase: 'content-tagging',
-        guardrails: 'permissive-content-transformations',
-      };
-      const result = RespondOptionsSchema.parse(opts);
-      expect(result.model).toBe('pcc');
-      expect(result.stream).toBe(true);
-      expect(result.useCase).toBe('content-tagging');
-    });
+  it('rejects invalid history roles', () => {
+    expect(() => RespondOptionsSchema.parse({
+      history: [{ role: 'tool', content: 'result' }],
+    })).toThrow();
+  });
+});
 
-    it('accepts schema as string path', () => {
-      const result = RespondOptionsSchema.parse({ schema: '/path/to/schema.json' });
-      expect(result.schema).toBe('/path/to/schema.json');
-    });
-
-    it('rejects invalid model in options', () => {
-      expect(() => RespondOptionsSchema.parse({ model: 'invalid' })).toThrow();
+describe('RespondResultSchema', () => {
+  it('accepts the fm-serve backend', () => {
+    expect(RespondResultSchema.parse({ text: 'ok', backend: 'fm-serve' })).toEqual({
+      text: 'ok',
+      backend: 'fm-serve',
     });
   });
 
-  describe('RespondResultSchema', () => {
-    it('validates a result', () => {
-      const result = RespondResultSchema.parse({ text: 'Hello world' });
-      expect(result.text).toBe('Hello world');
-    });
+  it.each(['fm', 'lab-bridge'])('rejects the removed %s backend', (backend) => {
+    expect(() => RespondResultSchema.parse({ text: 'ok', backend })).toThrow();
+  });
+});
 
-    it('rejects missing text', () => {
-      expect(() => RespondResultSchema.parse({})).toThrow();
+describe('ChatSessionOptionsSchema', () => {
+  it('accepts model and instructions', () => {
+    expect(ChatSessionOptionsSchema.parse({ model: 'pcc', instructions: 'Be concise' })).toEqual({
+      model: 'pcc',
+      instructions: 'Be concise',
     });
   });
 
-  describe('ChatSessionOptionsSchema', () => {
-    it('accepts valid options', () => {
-      const result = ChatSessionOptionsSchema.parse({
-        model: 'system',
-        instructions: 'You are helpful',
-        resume: 'my-session',
-      });
-      expect(result.model).toBe('system');
-      expect(result.resume).toBe('my-session');
+  it('strips removed PTY and resume options', () => {
+    expect(ChatSessionOptionsSchema.parse({
+      model: 'system',
+      resume: 'saved-chat',
+      transport: 'pty-chat',
+    })).toEqual({ model: 'system' });
+  });
+});
+
+describe('ModelAvailabilitySchema', () => {
+  it.each(['fm-serve', 'none'])('accepts the %s source', (source) => {
+    expect(ModelAvailabilitySchema.parse({ model: 'pcc', available: true, source }).source).toBe(source);
+  });
+
+  it.each(['fm', 'lab-bridge'])('rejects the removed %s source', (source) => {
+    expect(() => ModelAvailabilitySchema.parse({
+      model: 'system',
+      available: true,
+      source,
+    })).toThrow();
+  });
+});
+
+describe('QuotaUsageSchema', () => {
+  it('validates quota results', () => {
+    expect(QuotaUsageSchema.parse({ model: 'pcc', usage: '10%' })).toEqual({
+      model: 'pcc',
+      usage: '10%',
+    });
+  });
+});
+
+describe('Token count schemas', () => {
+  it('preserves standalone CLI image and transcript options', () => {
+    expect(TokenCountOptionsSchema.parse({
+      instructions: 'Count accurately',
+      image: '/tmp/image.png',
+      transcript: '/tmp/chat.json',
+    })).toEqual({
+      instructions: 'Count accurately',
+      image: '/tmp/image.png',
+      transcript: '/tmp/chat.json',
     });
   });
 
-  describe('ModelAvailabilitySchema', () => {
-    it('validates availability', () => {
-      const result = ModelAvailabilitySchema.parse({ model: 'pcc', available: true });
-      expect(result.available).toBe(true);
-    });
-
-    it('rejects missing fields', () => {
-      expect(() => ModelAvailabilitySchema.parse({ model: 'pcc' })).toThrow();
-    });
-  });
-
-  describe('QuotaUsageSchema', () => {
-    it('validates quota', () => {
-      const result = QuotaUsageSchema.parse({ model: 'pcc', usage: '50/100 requests' });
-      expect(result.usage).toBe('50/100 requests');
-    });
-  });
-
-  describe('TokenCountOptionsSchema', () => {
-    it('accepts empty options', () => {
-      expect(TokenCountOptionsSchema.parse({})).toEqual({});
-    });
-
-    it('accepts full options', () => {
-      const result = TokenCountOptionsSchema.parse({
-        instructions: 'Be concise',
-        image: '/img.png',
-        transcript: '/transcript.json',
-      });
-      expect(result.instructions).toBe('Be concise');
-    });
-  });
-
-  describe('TokenCountResultSchema', () => {
-    it('validates count', () => {
-      const result = TokenCountResultSchema.parse({ count: 42 });
-      expect(result.count).toBe(42);
-    });
-
-    it('rejects negative count', () => {
-      expect(() => TokenCountResultSchema.parse({ count: -1 })).toThrow();
-    });
-
-    it('rejects non-integer', () => {
-      expect(() => TokenCountResultSchema.parse({ count: 3.5 })).toThrow();
-    });
+  it('validates token count results', () => {
+    expect(TokenCountResultSchema.parse({ count: 42 })).toEqual({ count: 42 });
   });
 });

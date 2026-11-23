@@ -1,7 +1,7 @@
 // Core library public API
-export { respond, buildRespondArgs } from './respond.js';
+export { respond } from './respond.js';
 export { createChatSession, closeChatSession, getSession } from './chat.js';
-export { getAvailableModels, getAvailableModelsDirect, getQuotaUsage } from './models.js';
+export { getAvailableModels, getQuotaUsage } from './models.js';
 export { countTokens } from './tokens.js';
 export { ensureFmServe } from './serve-bootstrap.js';
 export { fmServeHealth, fmServeAvailable } from './fm-serve.js';

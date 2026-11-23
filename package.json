@@ -70,8 +70,5 @@
     "typescript": "^6.0.3",
     "vite": "^8.1.0",
     "vitest": "^4.1.9"
-  },
-  "optionalDependencies": {
-    "node-pty": "^1.1.0"
   }
 }

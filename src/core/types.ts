@@ -11,31 +11,19 @@ export const RespondOptionsSchema = z.object({
   model: FmModelSchema.optional(),
   instructions: z.string().optional(),
   stream: z.boolean().optional(),
-  greedy: z.boolean().optional(),
-  image: z.string().optional(),
-  /** Additional image paths (paired with optional labels). */
-  images: z.array(z.object({
-    path: z.string(),
-    label: z.string().optional(),
-  })).optional(),
-  schema: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
-  transcript: z.string().optional(),
-  saveTranscript: z.string().optional(),
-  useCase: z.enum(['general', 'content-tagging']).optional(),
-  guardrails: z.enum(['default', 'permissive-content-transformations']).optional(),
   history: z.array(z.object({
     role: z.enum(['system', 'user', 'assistant']),
     content: z.string(),
   })).optional(),
 });
 export type RespondOptions = z.infer<typeof RespondOptionsSchema> & {
-  /** Abort in-flight fm process (not part of zod JSON schema). */
+  /** Abort an in-flight transport request (not part of the Zod JSON schema). */
   signal?: AbortSignal;
 };
 
 export const RespondResultSchema = z.object({
   text: z.string(),
-  backend: z.enum(['fm-serve', 'fm', 'lab-bridge']).optional(),
+  backend: z.literal('fm-serve').optional(),
 });
 export type RespondResult = z.infer<typeof RespondResultSchema>;
 
@@ -44,9 +32,6 @@ export type RespondResult = z.infer<typeof RespondResultSchema>;
 export const ChatSessionOptionsSchema = z.object({
   model: FmModelSchema.optional(),
   instructions: z.string().optional(),
-  resume: z.string().optional(),
-  /** Legacy on-device PTY fm chat. Not a PCC path. */
-  transport: z.enum(['auto', 'pty-chat']).optional(),
 });
 export type ChatSessionOptions = z.infer<typeof ChatSessionOptionsSchema>;
 
@@ -62,7 +47,7 @@ export const ModelAvailabilitySchema = z.object({
   model: FmModelSchema,
   available: z.boolean(),
   reason: z.string().optional(),
-  source: z.enum(['fm-serve', 'fm', 'lab-bridge', 'none']).optional(),
+  source: z.enum(['fm-serve', 'none']).optional(),
 });
 export type ModelAvailability = z.infer<typeof ModelAvailabilitySchema>;
 

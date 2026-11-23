@@ -2,7 +2,7 @@
 
 TypeScript library and HTTP server for Apple Foundation Models on macOS — **system** (on-device) and **pcc** (Private Cloud Compute).
 
-**Validated PCC path:** Terminal-hosted `fm serve --socket`. External clients (this library and the TCP server) call the serve Unix socket. A PTY or direct non-Terminal `fm respond --model pcc` does **not** unlock PCC.
+**Validated PCC path:** Terminal-hosted `fm serve --socket`. External clients (this library and the TCP server) call the serve Unix socket. Generation and chat never invoke direct `fm respond` or PTY-backed `fm chat`.
 
 ## Install
 
@@ -22,7 +22,7 @@ bun add fm-access-pcc
 import { respond, createChatSession, getAvailableModels, countTokens } from 'fm-access-pcc';
 
 const result = await respond('What is Swift?', { model: 'pcc' });
-console.log(result.text, result.backend); // backend: 'fm-serve' | 'fm' | 'lab-bridge'
+console.log(result.text, result.backend); // backend: 'fm-serve'
 
 for await (const chunk of respond('Explain async/await', { stream: true, model: 'system' })) {
   process.stdout.write(chunk.text);
@@ -35,6 +35,15 @@ await chat.close();
 const models = await getAvailableModels();
 const { count } = await countTokens('Hello world');
 ```
+
+## Transport behavior
+
+- Buffered generation, history-backed chat, streaming, and model discovery use Terminal-hosted `fm serve` exclusively.
+- Serve errors propagate directly; generation fails explicitly for both `system` and `pcc` when the socket is unavailable.
+- Chat sessions store conversation history in memory. Closing a session discards that state; there is no chat subprocess.
+- Standalone CLI calls remain only for quota usage, token counting, and starting `fm serve`.
+
+**Generation API migration:** `respond()` supports `model`, `instructions`, `stream`, and `history`, plus library-only `signal` cancellation. CLI-only generation options and direct helper exports have been removed. Chat options are now only `model` and `instructions`; PTY transport selection and `resume` are no longer supported. Token-count options are unchanged.
 
 ## Server usage
 
@@ -88,7 +97,7 @@ fm serve --socket ~/.config/fm-access-pcc/fm.sock
 
 Disable auto-start: `FM_ACCESS_PCC_AUTO_SERVE=0`.
 
-**API migration:** `ensureCuaDriver` and `resolveCuaDriverBin` have been removed. A successful `ensureFmServe` launch now reports `method: 'applescript'` instead of `'cua-driver'`; the fallback remains `'open-terminal'`.
+**Bootstrap methods:** A successful `ensureFmServe` launch reports `method: 'applescript'` or `'open-terminal'`. No third-party Terminal automation dependency is required.
 
 Share a socket with fm-acp:
 
@@ -96,7 +105,9 @@ Share a socket with fm-acp:
 export FM_ACCESS_PCC_SERVE_SOCK="$HOME/.config/fm-acp/fm.sock"
 ```
 
-### Anti-patterns (do not use for PCC)
+### Unsupported PCC launch contexts
+
+These research findings are not package fallbacks:
 
 - PTY-wrapped `fm respond --model pcc`
 - Background / non-Terminal `fm serve`
@@ -111,9 +122,7 @@ export FM_ACCESS_PCC_SERVE_SOCK="$HOME/.config/fm-acp/fm.sock"
 | `FM_ACCESS_PCC_AUTO_SERVE` | Default **on**. `0`/`false` disables auto Terminal launch |
 | `FM_ACCESS_PCC_AUTO_SERVE_TIMEOUT_MS` | Wait for serve health (default `12000`) |
 | `FM_ACCESS_PCC_SERVE_LAUNCHER` | Path to `start-fm-serve.command` |
-| `FM_ACCESS_PCC_LAB_BRIDGE` | Default **on** probe of Lab `connection.json` if present |
-| `FM_BIN` / `FM_BIN_PATH` | Path to `fm` |
-| `AFM_BRIDGE_DESCRIPTOR` | Lab bridge descriptor path |
+| `FM_BIN` / `FM_BIN_PATH` | Path to `fm` for serve bootstrap, quota usage, and token counting |
 
 ## Development
 
@@ -128,14 +137,14 @@ bun run build
 
 ```
 src/core/
-  transport.ts       # serve → lab-bridge → direct fm
+  transport.ts       # generation, chat, streaming, and discovery over fm serve
   fm-serve.ts        # HTTP over Unix socket
   serve-bootstrap.ts # Terminal auto-start (AppleScript / open -a)
   respond.ts / chat.ts / models.ts
 src/server/          # Hono adapter
 ```
 
-Research notes: `.agents/research/pcc-matrix-results.md`, `.agents/research/afm-lab-pcc-findings.md`.
+Research notes: `.agents/research/pcc-matrix-results.md`.
 
 ## Related projects
 
@@ -159,7 +168,7 @@ Research notes: `.agents/research/pcc-matrix-results.md`, `.agents/research/afm-
    │ library + /fm + /v1 over Terminal fm serve │
    └────────────────────┬───────────────────────┘
                         ▼
-              /usr/bin/fm  (+ optional afm / Lab bridge)
+                   /usr/bin/fm
 ```
 
 ### Parent / consumer
@@ -172,15 +181,15 @@ Research notes: `.agents/research/pcc-matrix-results.md`, `.agents/research/afm-
 
 | Project | Relation |
 |---|---|
-| **[fm-acp](https://github.com/tariqwest/fm-acp)** | ACP stdio adapter for the same Terminal-hosted `fm serve` + PCC research. Overlapping bootstrap (`cua-driver`, serve launcher, Lab bridge). Prefer **fm-acp** inside ACP hosts (Zed, etc.); prefer **this package** for library imports and a plain HTTP/OpenAI TCP API. Sockets can be shared via `FM_ACCESS_PCC_SERVE_SOCK` / `FM_ACP_SERVE_SOCK`. |
+| **[fm-acp](https://github.com/tariqwest/fm-acp)** | ACP stdio adapter for the same Terminal-hosted `fm serve` + PCC research. Shared serve-launcher concepts. Prefer **fm-acp** inside ACP hosts (Zed, etc.); prefer **this package** for library imports and a plain HTTP/OpenAI TCP API. Sockets can be shared via `FM_ACCESS_PCC_SERVE_SOCK` / `FM_ACP_SERVE_SOCK`. |
 | **[oz-acp](https://github.com/tariqwest/oz-acp)** | Sibling ACP adapter pattern for Warp’s `oz` CLI (not Apple FM). Same “host protocol adapter” shape as fm-acp, different backend. |
 
 ### Child / lower layer
 
 | Project | Relation |
 |---|---|
-| **macOS `/usr/bin/fm`** | System CLI this package wraps (`respond`, `serve --socket`, `available`, …). Required runtime; not a separate repo. |
-| **[javascript-apple-fm-sdk](https://github.com/tariqwest/javascript-apple-fm-sdk)** | On-device `SystemLanguageModel` bindings (FFI). Complementary path used by **fm-server** for `system`; this package reaches on-device mainly via `fm` / serve rather than the SDK. |
+| **macOS `/usr/bin/fm`** | System CLI used for `serve --socket`, `quota-usage`, and `count-tokens`. Generation and chat use the serve API, not direct CLI commands. Required runtime; not a separate repo. |
+| **[javascript-apple-fm-sdk](https://github.com/tariqwest/javascript-apple-fm-sdk)** | On-device `SystemLanguageModel` bindings (FFI). Complementary path used by **fm-server** for `system`; this package reaches on-device through `fm serve` rather than the SDK. |
 
 ### Overlapping / inspiration
 
@@ -191,7 +200,6 @@ Research notes: `.agents/research/pcc-matrix-results.md`, `.agents/research/afm-
 | **[promptpipe](https://github.com/tariqwest/promptpipe)** | Unix-style prompt/stdin plumbing for coding CLIs; inspiration for thin, composable agent I/O rather than full harnesses. |
 | **[acp-router](https://github.com/tariqwest/acp-router)** | LiteLLM-oriented ACP routing; related agent-gateway ecosystem, not FM-specific. |
 | **Apple `fm serve`** | Built-in OpenAI-shaped local server. Inspiration and production transport: when **Terminal-hosted**, it is the validated multi-client PCC path this package clients. |
-| **Foundation Lab / `afm`** | Community Lab app + CLI; historical Agent Bridge (`connection.json`) is an optional secondary PCC candidate (see research notes). Homebrew `afm` alone is on-device-oriented. |
 
 ### When to use what
 

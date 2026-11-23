@@ -1,81 +1,97 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Readable, Writable } from 'stream';
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'node:events';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('child_process', () => ({
+vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
 }));
 
 vi.mock('./transport.js', () => ({
-  transportGetAvailableModels: vi.fn(async () => [
-    { model: 'system', available: true, source: 'fm-serve' },
-    { model: 'pcc', available: true, source: 'fm-serve' },
-  ]),
+  transportGetAvailableModels: vi.fn(),
 }));
 
-import { spawn } from 'child_process';
-import { getAvailableModels, getAvailableModelsDirect, getQuotaUsage } from './models.js';
+import { spawn } from 'node:child_process';
+import { getAvailableModels, getQuotaUsage } from './models.js';
+import { transportGetAvailableModels } from './transport.js';
 
 const mockSpawn = vi.mocked(spawn);
+const mockTransportGetAvailableModels = vi.mocked(transportGetAvailableModels);
 
-function createMockProcess(stdoutData: string, exitCode = 0, stderrData = '') {
-  const stdout = new Readable({ read() {} });
-  const stderr = new Readable({ read() {} });
-  const proc = Object.assign(new EventEmitter(), {
-    stdout,
-    stderr,
-    stdin: new Writable({ write() {} }),
-    pid: 1234,
-    killed: false,
-    kill: vi.fn(),
+function mockProcess(stdout: string, stderr = '', code = 0) {
+  const proc = new EventEmitter() as EventEmitter & {
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+  };
+  proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
+  mockSpawn.mockReturnValue(proc as never);
+  queueMicrotask(() => {
+    if (stdout) proc.stdout.emit('data', Buffer.from(stdout));
+    if (stderr) proc.stderr.emit('data', Buffer.from(stderr));
+    proc.emit('close', code);
   });
-  setTimeout(() => {
-    if (stdoutData) stdout.push(stdoutData);
-    stdout.push(null);
-    if (stderrData) stderr.push(stderrData);
-    stderr.push(null);
-    proc.emit('close', exitCode);
-  }, 0);
-  return proc as any;
 }
 
 describe('getAvailableModels', () => {
-  it('uses transport', async () => {
-    const models = await getAvailableModels();
-    expect(models.some((m) => m.model === 'pcc' && m.available)).toBe(true);
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
-});
 
-describe('getAvailableModelsDirect', () => {
-  beforeEach(() => vi.clearAllMocks());
+  it('delegates discovery to the serve transport', async () => {
+    const expected = [
+      { model: 'system' as const, available: true, source: 'fm-serve' as const },
+      { model: 'pcc' as const, available: false, source: 'none' as const },
+    ];
+    mockTransportGetAvailableModels.mockResolvedValue(expected);
 
-  it('parses fm models output', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('  Apple Foundation Models\n  ✓ system (AFM 3 Core)\n  ✗ pcc (Private Cloud Compute is not available in this context.)\n', 1));
-    const models = await getAvailableModelsDirect();
-    expect(models).toEqual([
-      { model: 'system', available: true, source: 'fm' },
-      { model: 'pcc', available: false, source: 'fm' },
-    ]);
+    await expect(getAvailableModels()).resolves.toEqual(expected);
+    expect(mockTransportGetAvailableModels).toHaveBeenCalledWith(undefined);
+    expect(mockSpawn).not.toHaveBeenCalled();
   });
-});
 
-describe('local model filtering', () => {
-  it('does not pass unsupported --model to fm models', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('  ✓ system (AFM 3 Core)\n  ✗ pcc\n'));
-    expect(await getAvailableModelsDirect('system')).toEqual([
-      { model: 'system', available: true, source: 'fm' },
+  it('forwards model filtering', async () => {
+    mockTransportGetAvailableModels.mockResolvedValue([
+      { model: 'pcc', available: true, source: 'fm-serve' },
     ]);
-    expect(mockSpawn).toHaveBeenLastCalledWith(expect.any(String), ['models']);
+
+    await expect(getAvailableModels('pcc')).resolves.toEqual([
+      { model: 'pcc', available: true, source: 'fm-serve' },
+    ]);
+    expect(mockTransportGetAvailableModels).toHaveBeenCalledWith('pcc');
   });
 });
 
 describe('getQuotaUsage', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-  it('parses quota lines', async () => {
-    mockSpawn.mockReturnValue(createMockProcess('System: Not applicable (quota only applies to PCC)\nPCC: 10%\n'));
-    const q = await getQuotaUsage();
-    expect(q[0].model).toBe('system');
-    expect(q[1].usage).toContain('10%');
+  it('parses quota output from the standalone CLI', async () => {
+    mockProcess('System: Not applicable (on-device model)\nPCC: 10%');
+
+    await expect(getQuotaUsage()).resolves.toEqual([
+      { model: 'system', usage: 'Not applicable (on-device model)' },
+      { model: 'pcc', usage: '10%' },
+    ]);
+    expect(mockSpawn).toHaveBeenCalledWith(
+      '/usr/bin/fm',
+      ['quota-usage'],
+    );
+  });
+
+  it('adds a model filter to quota-usage', async () => {
+    mockProcess('PCC: 10%');
+
+    await expect(getQuotaUsage('pcc')).resolves.toEqual([
+      { model: 'pcc', usage: '10%' },
+    ]);
+    expect(mockSpawn).toHaveBeenCalledWith(
+      '/usr/bin/fm',
+      ['quota-usage', '--model', 'pcc'],
+    );
+  });
+
+  it('rejects when quota-usage fails', async () => {
+    mockProcess('', 'quota unavailable', 1);
+    await expect(getQuotaUsage()).rejects.toThrow('quota unavailable');
   });
 });

@@ -7,9 +7,6 @@ export const SERVE_SOCK_ENV = 'FM_ACCESS_PCC_SERVE_SOCK';
 export const AUTO_SERVE_ENV = 'FM_ACCESS_PCC_AUTO_SERVE';
 export const AUTO_SERVE_TIMEOUT_ENV = 'FM_ACCESS_PCC_AUTO_SERVE_TIMEOUT_MS';
 export const SERVE_LAUNCHER_ENV = 'FM_ACCESS_PCC_SERVE_LAUNCHER';
-export const LAB_BRIDGE_DESCRIPTOR_ENV = 'AFM_BRIDGE_DESCRIPTOR';
-export const LAB_BRIDGE_BASE_ENV = 'AFM_BRIDGE_BASE';
-export const LAB_BRIDGE_ENABLED_ENV = 'FM_ACCESS_PCC_LAB_BRIDGE';
 
 export function configBaseDir(env: NodeJS.ProcessEnv = process.env): string {
   const home = env.HOME?.trim() || os.homedir();
@@ -28,13 +25,6 @@ export function defaultServeLauncherPath(env: NodeJS.ProcessEnv = process.env): 
   const override = env[SERVE_LAUNCHER_ENV]?.trim();
   if (override) return override;
   return path.join(configBaseDir(env), 'start-fm-serve.command');
-}
-
-export function defaultLabBridgeDescriptor(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env[LAB_BRIDGE_DESCRIPTOR_ENV]?.trim();
-  if (override) return path.resolve(override);
-  const base = env[LAB_BRIDGE_BASE_ENV]?.trim() || path.join(env.HOME?.trim() || os.homedir(), '.afm');
-  return path.join(path.resolve(base), 'bridge', 'connection.json');
 }
 
 /** Default ON; set env=0/false/off to disable. */

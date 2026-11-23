@@ -18,36 +18,13 @@ function runFmCommand(args: string[]): Promise<string> {
 
   return new Promise((resolve, reject) => {
     child.on('close', (code) => {
-      const hasModelResults = args[0] === 'models' && code === 1 && parseAvailability(stdout).length > 0;
-      if (code !== 0 && !hasModelResults) reject(new Error(stderr.trim() || `fm exited with code ${code}`));
+      if (code !== 0) reject(new Error(stderr.trim() || `fm exited with code ${code}`));
       else resolve(stdout.trim());
     });
   });
 }
 
-/** Direct `fm models` parse (current process context; usually no PCC). */
-export async function getAvailableModelsDirect(model?: FmModel): Promise<ModelAvailability[]> {
-  const output = await runFmCommand(['models']);
-  const models = parseAvailability(output);
-  return model ? models.filter((entry) => entry.model === model) : models;
-}
-
-function parseAvailability(output: string): ModelAvailability[] {
-  const results: ModelAvailability[] = [];
-  for (const line of output.split('\n')) {
-    const match = line.match(/^\s*([✓✗])\s+(system|pcc)\b/);
-    if (match) {
-      results.push({
-        model: match[2] as FmModel,
-        available: match[1] === '✓',
-        source: 'fm',
-      });
-    }
-  }
-  return results;
-}
-
-/** Prefer Terminal-hosted fm serve health; fall back to direct fm models. */
+/** Report availability from Terminal-hosted fm serve. */
 export async function getAvailableModels(model?: FmModel): Promise<ModelAvailability[]> {
   return transportGetAvailableModels(model);
 }

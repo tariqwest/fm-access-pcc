@@ -32,7 +32,7 @@ interface ChatMessage {
 
 openaiRoutes.post('/v1/chat/completions', async (c) => {
   const body = await c.req.json();
-  const { model, messages, stream, temperature } = body;
+  const { model, messages, stream } = body;
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return c.json({ error: { message: 'messages is required and must be non-empty' } }, 400);
@@ -53,8 +53,8 @@ openaiRoutes.post('/v1/chat/completions', async (c) => {
   const options: RespondOptions = {
     model: model as FmModel | undefined,
     instructions,
-    greedy: temperature === 0 ? true : undefined,
     stream: stream ? true : undefined,
+    history: userMessages.slice(0, -1),
   };
 
   try {

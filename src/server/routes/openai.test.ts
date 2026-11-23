@@ -70,7 +70,7 @@ describe('OpenAI-Compatible Routes', () => {
       expect(body.choices[0].finish_reason).toBe('stop');
     });
 
-    it('extracts system message as instructions', async () => {
+    it('extracts system instructions and forwards earlier conversation history', async () => {
       mockRespond.mockResolvedValue({ text: 'Sure.' });
 
       await createApp().request('/v1/chat/completions', {
@@ -80,33 +80,23 @@ describe('OpenAI-Compatible Routes', () => {
           model: 'pcc',
           messages: [
             { role: 'system', content: 'You are a helpful assistant' },
+            { role: 'user', content: 'First question' },
+            { role: 'assistant', content: 'First answer' },
             { role: 'user', content: 'Hello' },
           ],
-        }),
-      });
-
-      expect(mockRespond).toHaveBeenCalledWith('Hello', expect.objectContaining({
-        model: 'pcc',
-        instructions: 'You are a helpful assistant',
-      }));
-    });
-
-    it('maps temperature 0 to greedy', async () => {
-      mockRespond.mockResolvedValue({ text: 'Deterministic.' });
-
-      await createApp().request('/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'system',
-          messages: [{ role: 'user', content: 'Hi' }],
           temperature: 0,
         }),
       });
 
-      expect(mockRespond).toHaveBeenCalledWith('Hi', expect.objectContaining({
-        greedy: true,
-      }));
+      expect(mockRespond).toHaveBeenCalledWith('Hello', {
+        model: 'pcc',
+        instructions: 'You are a helpful assistant',
+        stream: undefined,
+        history: [
+          { role: 'user', content: 'First question' },
+          { role: 'assistant', content: 'First answer' },
+        ],
+      });
     });
 
     it('returns 400 when messages are missing', async () => {

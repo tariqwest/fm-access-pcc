@@ -68,13 +68,13 @@ nativeRoutes.post('/fm/respond', async (c) => {
 });
 
 nativeRoutes.post('/fm/chat', async (c) => {
-  const { prompt, model, instructions, resume, transport } = await c.req.json();
+  const { prompt, model, instructions } = await c.req.json();
   if (!prompt) {
     return c.json({ error: 'Prompt is required' }, 400);
   }
 
   try {
-    const session = await createChatSession({ model, instructions, resume, transport });
+    const session = await createChatSession({ model, instructions });
     const response = await session.send(prompt);
     return c.json({ session_id: session.id, response });
   } catch (err: any) {
