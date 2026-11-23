@@ -1,6 +1,6 @@
 {
   "name": "fm-access-pcc",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Access Apple Foundation Models (system + PCC) as a TypeScript library and REST service",
   "type": "module",
   "exports": {
